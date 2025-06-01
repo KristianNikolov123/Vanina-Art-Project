@@ -1,0 +1,179 @@
+import sqlite3
+
+    
+def show_all():
+# Създаване на връзка с базата данни и курсур
+    conn = sqlite3.connect('profile.db')
+    cursor = conn.cursor() 
+
+    cursor.execute("SELECT rowid, * FROM profiles")
+    item = cursor.fetchall()
+
+    for item in item:
+        print(item)
+    # Потвърждаване на промените
+    conn.commit()
+
+    # Затваряне на курсора и връзката с базата данни
+    cursor.close()
+    conn.close()
+
+def add_one(name_of_profile,price_per_meter,width,profile_in_store):
+    conn = sqlite3.connect('profile.db')
+    cursor = conn.cursor() 
+
+    cursor.execute("INSERT INTO profiles VALUES (?,?,?,?)", (name_of_profile,price_per_meter,width,profile_in_store))
+    
+    conn.commit()
+
+    cursor.close()
+    conn.close()
+    
+def delete_one(name_of_profile):
+    conn = sqlite3.connect('profile.db')
+    cursor = conn.cursor() 
+    
+    cursor.execute("DELETE FROM profiles WHERE name_of_profile = (?)", (name_of_profile,))
+    conn.commit()
+
+    cursor.close()
+    conn.close()
+    
+def add_many(list):
+    conn = sqlite3.connect('profile.db')
+    cursor = conn.cursor() 
+
+    cursor.executemany("INSERT INTO profiles VALUES (?,?,?,?)", (list))
+    
+    conn.commit()
+
+    cursor.close()
+    conn.close()
+---------------------------------------------------------------------------------
+
+import database 
+# database.add_one("","","","")
+
+items = [
+    ("M15","15","7"),
+    ("K300","12","8")
+]
+database.add_many(items)
+
+
+#database.delete_one("")
+
+
+database.show_all()
+
+
+
+
+
+_______________________CHAT GPT___________________________________________
+
+
+import sqlite3
+
+def add_many(items):
+    conn = sqlite3.connect('profile.db')
+    cursor = conn.cursor()
+
+    # Filter out existing items from the list
+    existing_items = set(cursor.execute("SELECT name FROM profiles").fetchall())
+    filtered_items = [item for item in items if item[0] not in existing_items]
+
+    # Insert the filtered items using executemany
+    cursor.executemany("INSERT INTO profiles VALUES (?,?,?,?)", filtered_items)
+
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+# Example usage
+items = [("Item 1", 10, 2, 100),
+         ("Item 2", 15, 3, 150),
+         ("Item 3", 20, 4, 200)]
+
+add_many(items)
+
+
+@app.route("/profiles")
+def profiles():
+    return render_template("profiles.html")
+
+
+<table class="table table-hover table-dark">
+         <tr>
+                <!-- Your Columns HERE -->
+                <th scope="col">Име</th>
+                <th scope="col">Цена на метър</th>
+                <th scope="col">Дебелина на профила</th>
+                <th scope="col">В наличност</th>
+            </tr>
+        </thead>
+        <tbody>
+            <!-- Your rows inside the table HERE: -->
+            {% for item in items %}
+                <tr>
+                    <td>{{ item.name }}</td>
+                    <td>{{ item.name }}</td>
+                    <td>{{ item.barcode }}</td>
+                    <td>{{ item.price }}$</td>
+                    <td>
+                        <button class="btn btn-outline btn-info">More Info</button>
+                        <button class="btn btn-outline btn-success">Purchase this Item</button> <thead>
+          
+                    </td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+______________________________________________________________________________________
+<li class="nav-item active">
+                <a class="nav-link" href="{{ url_for("base_page")}}">Home <span class="sr-only">(current)</span></a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="{{ url_for("table_page")}}">Table</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="{{ url_for("show_profiles")}}">Profiles</a>
+            </li>
+
+______________________________________________________________________________________
+
+<h2>Добави профил</h2>
+    <form action="/add_one" method="POST">
+        <label for="name_of_profile">Име на профила:</label>
+        <input type="text" name="name_of_profile" id="name_of_profile"><br>
+        <label for="price_per_meter">Цена на метър:</label>
+        <input type="text" name="price_per_meter" id="price_per_meter"><br>
+        <label for="width">Дебелина на профила:</label>
+        <input type="text" name="width" id="width"><br>
+        <label for="profile_in_store">В наличност:</label>
+        <input type="text" name="profile_in_store" id="profile_in_store"><br>
+        <input type="submit" value="Add Profile">
+    </form>
+
+    <h2>Изтрий профил</h2>
+    <form action="/delete_profile" method="POST">
+        <label for="name_of_profile">Име на профила:</label>
+        <input type="text" name="name_of_profile" id="name_of_profile"><br>
+        <input type="submit" value="Delete Profile">
+    </form>
+
+
+    ______________________________________________________________________________________
+
+    {% for profile in profiles %}
+                <tr>
+                    <td>{{ profile.name_of_profile }}</td>
+                    <td>{{ profile.price_per_meter }}</td>
+                    <td>{{ profile.width }}</td>
+                    <td>{{ profile.profile_in_store }}</td>
+                    <!--<td>
+                        <button class="btn btn-outline btn-info">More Info</button>
+                        <button class="btn btn-outline btn-success">Purchase this profile</button>
+                    </td> -->
+                </tr>
+            

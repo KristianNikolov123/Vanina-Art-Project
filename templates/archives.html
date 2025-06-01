@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+
+{% block title %}Архив{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h1 class="mb-4">Архив на влизанията</h1>
+    
+    <div class="table-responsive">
+        <table class="table table-striped">
+            <thead>
+                <tr>
+                    <th>Потребител</th>
+                    <th>Имейл</th>
+                    <th>Време на влизане</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for log in logs %}
+                <tr>
+                    <td>{{ log.username }}</td>
+                    <td>{{ log.email }}</td>
+                    <td>{{ log.login_time }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %} 

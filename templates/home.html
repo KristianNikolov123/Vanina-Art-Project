@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+
+{% block title %}Обратна връзка{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+    <div class="row justify-content-center">
+        <div class="col-lg-8 text-center">
+            <h1 class="display-5 mb-4">💬 Дъска за обратна връзка</h1>
+            <p class="lead mb-4">Ако нещо не ти харесва, имаш идея или искаш промяна – напиши го тук!</p>
+            <form method="post" action="{{ url_for('submit_feedback') }}" class="mb-4">
+                <div class="input-group">
+                    <textarea class="form-control" name="message" rows="2" maxlength="300" placeholder="Напиши своята критика, идея или предложение..." required></textarea>
+                    <button class="btn btn-primary" type="submit">Изпрати</button>
+                </div>
+            </form>
+            <div class="feedback-bubbles mt-4 text-start">
+                {% for fb in feedbacks %}
+                    <div class="bubble mb-2 p-3 rounded shadow-sm" style="background: #f1f1f1; display: inline-block; max-width: 80%;">
+                        <span style="white-space: pre-line;" id="msg-{{ fb['id'] }}">{{ fb['message'] }}</span>
+                        <div class="text-end" style="font-size: 0.85em; color: #888;">{{ fb['formatted_time'] }}</div>
+                        <form method="post" action="{{ url_for('delete_feedback', feedback_id=fb['id']) }}" style="display:inline;">
+                            <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Сигурни ли сте, че искате да изтриете тази обратна връзка?')">Изтрий</button>
+                        </form>
+                        <button class="btn btn-sm btn-outline-secondary" onclick="toggleEdit({{ fb['id'] }})">Редактирай</button>
+                        <form method="post" action="{{ url_for('edit_feedback', feedback_id=fb['id']) }}" id="edit-form-{{ fb['id'] }}" style="display:none; margin-top: 8px;">
+                            <div class="input-group">
+                                <input type="text" class="form-control" name="edit_message" value="{{ fb['message'] }}" maxlength="300" required>
+                                <button type="submit" class="btn btn-primary btn-sm">Запази</button>
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="toggleEdit({{ fb['id'] }})">Отказ</buton>
+                           </div>
+                        </form>
+                    </div>
+                {% else %}
+                    <div class="text-muted">Все още няма обратна връзка. Бъди първият!</div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/home.js') }}"></script>
+{% endblock %}
