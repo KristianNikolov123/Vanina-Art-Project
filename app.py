@@ -13,15 +13,13 @@ import pytz
 load_dotenv()
 
 app = Flask(__name__)
-app.secret_key = 'your-secret-key-here'  # Промени това на нещо случайно и сложно!
-
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
 db_initialized = False
-# Настройка на Flask-Login
+
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
 
-# Email настройки
 ADMIN_EMAIL = os.getenv('ADMIN_EMAIL')
 ADMIN_EMAIL_PASSWORD = os.getenv('ADMIN_EMAIL_PASSWORD')
 SMTP_SERVER = "smtp.gmail.com"
