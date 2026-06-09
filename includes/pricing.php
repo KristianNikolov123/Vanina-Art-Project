@@ -51,11 +51,14 @@ function find_closest_passepartout_cut(array $cuts, float $reqW, float $reqH): ?
         fn($cut) => cut_fits_request((float)$cut['width_cm'], (float)$cut['height_cm'], $reqW, $reqH)
     ));
 
-    $pool = $fitting ?: $cuts;
+    if (empty($fitting)) {
+        return null;
+    }
+
     $best = null;
     $bestDistance = PHP_FLOAT_MAX;
 
-    foreach ($pool as $cut) {
+    foreach ($fitting as $cut) {
         $distance = cut_distance_sq((float)$cut['width_cm'], (float)$cut['height_cm'], $reqW, $reqH);
         if ($distance < $bestDistance) {
             $bestDistance = $distance;
@@ -74,11 +77,31 @@ function get_passepartout_cuts(PDO $conn, int $passepartoutId): array
         JOIN passepartout_sheet_types st ON cs.sheet_type_id = st.id
         JOIN passepartout_sheet_availability psa ON psa.sheet_type_id = st.id
         WHERE psa.passepartout_id = ?
-        ORDER BY cs.width_cm * cs.height_cm
+    ');
+    $stmt->execute([$passepartoutId]);
+    $cuts = $stmt->fetchAll();
+
+    $stmt = $conn->prepare('
+        SELECT st.width_cm, st.height_cm, st.name AS sheet_name, st.id AS sheet_type_id
+        FROM passepartout_sheet_types st
+        JOIN passepartout_sheet_availability psa ON psa.sheet_type_id = st.id
+        WHERE psa.passepartout_id = ?
     ');
     $stmt->execute([$passepartoutId]);
 
-    return $stmt->fetchAll();
+    $seen = [];
+    $all = [];
+    foreach (array_merge($cuts, $stmt->fetchAll()) as $cut) {
+        $key = $cut['sheet_type_id'] . ':' . $cut['width_cm'] . 'x' . $cut['height_cm'];
+        if (!isset($seen[$key])) {
+            $seen[$key] = true;
+            $all[] = $cut;
+        }
+    }
+
+    usort($all, fn($a, $b) => ($a['width_cm'] * $a['height_cm']) <=> ($b['width_cm'] * $b['height_cm']));
+
+    return $all;
 }
 
 function resolve_passepartout(PDO $conn, ?int $passepartoutId, ?string $passepartoutName): ?array
