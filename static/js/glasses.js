@@ -1,6 +1,6 @@
 function confirmDelete(glassId) {
     if (confirm('Сигурни ли сте, че искате да изтриете това стъкло?')) {
-        window.location.href = `/delete_glass/${glassId}`;
+        window.location.href = `${window.BASE_PATH}/delete_glass/${glassId}`;
     }
 }
 
@@ -20,7 +20,7 @@ function editGlass(glassId) {
     form.querySelector('[name="stock"]').value = data.stock;
 
     // Update form action
-    form.action = `/edit_glass/${glassId}`;
+    form.action = `${window.BASE_PATH}/edit_glass/${glassId}`;
 
     // Show the modal
     const modal = new bootstrap.Modal(document.getElementById('editGlassModal'));

@@ -3,20 +3,19 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}{% endblock %} - Ванина Арт</title>
+    <title><?= e($title ?? '') ?> - Ванина Арт</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <link href="{{ url_for('static', filename='css/glasses.css') }}" rel="stylesheet">
-    {% block styles %}
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/interface.css') }}">
-    {% endblock %}
-
+    <link href="<?= static_url('css/glasses.css') ?>" rel="stylesheet">
+    <?php if (!empty($extra_css)): ?>
+    <link rel="stylesheet" href="<?= static_url('css/' . $extra_css) ?>">
+    <?php endif; ?>
 </head>
 <body>
     <nav class="navbar navbar-expand-lg navbar-dark">
         <div class="container">
-            <a class="navbar-brand d-flex align-items-center" href="{{ url_for('home') }}">
-                <img src="{{ url_for('static', filename='Logo.jpg') }}" alt="Vanina Art Logo">
+            <a class="navbar-brand d-flex align-items-center" href="<?= url_for('home') ?>">
+                <img src="<?= static_url('Logo.jpg') ?>" alt="Vanina Art Logo">
                 <span>Ванина Арт</span>
             </a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
@@ -25,92 +24,91 @@
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav ms-auto">
                     <li class="nav-item">
-                        <a class="nav-link {% if request.endpoint == 'home' %}active{% endif %}" href="{{ url_for('home') }}">
+                        <a class="nav-link <?= $current_page === 'home' ? 'active' : '' ?>" href="<?= url_for('home') ?>">
                             <i class="fas fa-home"></i> Начало
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link {% if request.endpoint == 'interface' %}active{% endif %}" href="{{ url_for('interface') }}">
+                        <a class="nav-link <?= $current_page === 'interface' ? 'active' : '' ?>" href="<?= url_for('interface') ?>">
                             <i class="fas fa-list"></i> Поръчки
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link {% if request.endpoint == 'profiles' %}active{% endif %}" href="{{ url_for('profiles') }}">
+                        <a class="nav-link <?= $current_page === 'profiles' ? 'active' : '' ?>" href="<?= url_for('profiles') ?>">
                             <i class="fas fa-border-all"></i> Профили
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link {% if request.endpoint == 'glasses' %}active{% endif %}" href="{{ url_for('glasses') }}">
+                        <a class="nav-link <?= $current_page === 'glasses' ? 'active' : '' ?>" href="<?= url_for('glasses') ?>">
                             <i class="fas fa-window-maximize"></i> Стъкла
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link {% if request.endpoint == 'passepartouts' %}active{% endif %}" href="{{ url_for('passepartouts') }}">
+                        <a class="nav-link <?= $current_page === 'passepartouts' ? 'active' : '' ?>" href="<?= url_for('passepartouts') ?>">
                             <i class="fas fa-image"></i> Паспартута
                         </a>
                     </li>
-                    {% if current_user.is_authenticated and current_user.is_admin_email %}
+                    <?php if ($current_user && User::isAdminEmail($current_user->email)): ?>
                     <li class="nav-item">
-                        <a class="nav-link {% if request.endpoint == 'archives' %}active{% endif %}" href="{{ url_for('archives') }}">
+                        <a class="nav-link <?= $current_page === 'archives' ? 'active' : '' ?>" href="<?= url_for('archives') ?>">
                             <i class="fas fa-archive"></i> Архив
                         </a>
                     </li>
-                    {% endif %}
-                    {% if current_user.is_authenticated %}
+                    <?php endif; ?>
+                    <?php if ($current_user): ?>
                         <li class="nav-item">
-                            <span class="nav-link">Здравей, {{ current_user.username }}!</span>
+                            <span class="nav-link">Здравей, <?= e($current_user->username) ?>!</span>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link" href="{{ url_for('logout') }}">
+                            <a class="nav-link" href="<?= url_for('logout') ?>">
                                 <i class="fas fa-sign-out-alt"></i> Изход
                             </a>
                         </li>
-                    {% else %}
+                    <?php else: ?>
                         <li class="nav-item">
-                            <a class="nav-link" href="{{ url_for('login') }}">
+                            <a class="nav-link" href="<?= url_for('login') ?>">
                                 <i class="fas fa-sign-in-alt"></i> Вход
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link" href="{{ url_for('signup') }}">
+                            <a class="nav-link" href="<?= url_for('signup') ?>">
                                 <i class="fas fa-user-plus"></i> Регистрация
                             </a>
                         </li>
-                    {% endif %}
+                    <?php endif; ?>
                 </ul>
             </div>
         </div>
     </nav>
 
     <div class="container mt-4">
-        {% with messages = get_flashed_messages(with_categories=true) %}
-            {% if messages %}
-                {% for category, message in messages %}
-                    <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
-                        {{ message }}
-                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                    </div>
-                {% endfor %}
-            {% endif %}
-        {% endwith %}
+        <?php foreach ($flashed_messages as $flash): ?>
+            <div class="alert alert-<?= e($flash['category']) ?> alert-dismissible fade show" role="alert">
+                <?= e($flash['message']) ?>
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+        <?php endforeach; ?>
 
-        {% block content %}{% endblock %}
+        <?= $content ?>
     </div>
 
-    {% if not current_user.is_authenticated and request.endpoint not in ['login', 'signup'] %}
+    <?php if (!$current_user && !in_array($current_page, ['login', 'signup'])): ?>
     <div class="login-overlay" id="loginOverlay">
         <div class="login-modal">
             <i class="fas fa-lock"></i>
             <h3>Влез в профил</h3>
             <p>За да видиш съдържанието, трябва да влезеш в профила си.</p>
-            <a href="{{ url_for('login') }}" class="btn btn-primary">
+            <a href="<?= url_for('login') ?>" class="btn btn-primary">
                 <i class="fas fa-sign-in-alt"></i> Вход
             </a>
         </div>
     </div>
-    {% endif %}
+    <?php endif; ?>
 
+    <script>window.BASE_PATH = '<?= BASE_PATH ?>';</script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    {% block scripts %}{% endblock %}
+    <?php if (!empty($extra_js)): ?>
+    <script src="<?= static_url('js/' . $extra_js) ?>"></script>
+    <?php endif; ?>
 </body>
 </html>

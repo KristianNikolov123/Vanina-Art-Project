@@ -1,6 +1,6 @@
 function confirmDelete(profileId) {
     if (confirm('Сигурни ли сте, че искате да изтриете този профил?')) {
-        window.location.href = `/delete_profile/${profileId}`;
+        window.location.href = `${window.BASE_PATH}/delete_profile/${profileId}`;
     }
 }
 
@@ -20,7 +20,7 @@ function editProfile(profileId) {
     form.querySelector('[name="stock"]').value = data.stock;
 
     // Update form action
-    form.action = `/edit_profile/${profileId}`;
+    form.action = `${window.BASE_PATH}/edit_profile/${profileId}`;
 
     // Show the modal
     const modal = new bootstrap.Modal(document.getElementById('editProfileModal'));

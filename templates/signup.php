@@ -1,17 +1,16 @@
-{% extends "base.html" %}
-
-{% block title %}Вход{% endblock %}
-
-{% block content %}
 <div class="container">
     <div class="row justify-content-center">
         <div class="col-md-6">
             <div class="card">
                 <div class="card-header">
-                    <h3 class="text-center">Вход</h3>
+                    <h3 class="text-center">Регистрация</h3>
                 </div>
                 <div class="card-body">
-                    <form method="POST" action="{{ url_for('login') }}">
+                    <form method="POST" action="<?= url_for('signup') ?>">
+                        <div class="mb-3">
+                            <label for="username" class="form-label">Потребителско име</label>
+                            <input type="text" class="form-control" id="username" name="username" required>
+                        </div>
                         <div class="mb-3">
                             <label for="email" class="form-label">Имейл</label>
                             <input type="email" class="form-control" id="email" name="email" required>
@@ -20,16 +19,19 @@
                             <label for="password" class="form-label">Парола</label>
                             <input type="password" class="form-control" id="password" name="password" required>
                         </div>
+                        <div class="mb-3">
+                            <label for="confirm_password" class="form-label">Потвърди парола</label>
+                            <input type="password" class="form-control" id="confirm_password" name="confirm_password" required>
+                        </div>
                         <div class="d-grid">
-                            <button type="submit" class="btn btn-primary">Вход</button>
+                            <button type="submit" class="btn btn-primary">Регистрация</button>
                         </div>
                     </form>
                 </div>
                 <div class="card-footer text-center">
-                    <p class="mb-0">Нямате акаунт? <a href="{{ url_for('signup') }}">Регистрирайте се</a></p>
+                    <p class="mb-0">Вече имате акаунт? <a href="<?= url_for('login') ?>">Влезте</a></p>
                 </div>
             </div>
         </div>
     </div>
 </div>
-{% endblock %} 

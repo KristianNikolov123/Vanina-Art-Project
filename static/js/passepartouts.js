@@ -1,6 +1,6 @@
 function confirmDelete(passepartoutId) {
     if (confirm('Сигурни ли сте, че искате да изтриете това паспарту?')) {
-        window.location.href = `/delete_passepartout/${passepartoutId}`;
+        window.location.href = `${window.BASE_PATH}/delete_passepartout/${passepartoutId}`;
     }
 }
 
@@ -20,7 +20,7 @@ function editPassepartout(passepartoutId) {
     form.querySelector('[name="stock"]').value = data.stock;
 
     // Update form action
-    form.action = `/edit_passepartout/${passepartoutId}`;
+    form.action = `${window.BASE_PATH}/edit_passepartout/${passepartoutId}`;
 
     // Show the modal
     const modal = new bootstrap.Modal(document.getElementById('editPassepartoutModal'));
