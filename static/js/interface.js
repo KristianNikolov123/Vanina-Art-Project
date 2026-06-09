@@ -4,7 +4,7 @@ function addProfileField(containerId = 'additionalProfiles') {
     const div = document.createElement('div');
     div.className = 'input-group mt-2';
     div.innerHTML = `
-        <input type="text" class="form-control" name="additional_profiles[]">
+        <input type="text" class="form-control order-price-trigger" name="additional_profiles[]" list="profileCatalog">
         <button type="button" class="btn btn-outline-danger" onclick="this.parentElement.remove()">
             <i class="fas fa-minus"></i>
         </button>
@@ -18,8 +18,9 @@ function appendAdditionalProfileField(container, value) {
 
     const input = document.createElement('input');
     input.type = 'text';
-    input.className = 'form-control';
+    input.className = 'form-control order-price-trigger';
     input.name = 'additional_profiles[]';
+    input.setAttribute('list', 'profileCatalog');
     input.value = value;
 
     const button = document.createElement('button');
@@ -55,7 +56,11 @@ function editOrder(orderId) {
     form.querySelector('[name="height"]').value = data.height ?? '';
     form.querySelector('[name="profile"]').value = data.profile ?? '';
     form.querySelector('[name="glass"]').value = data.glass ?? '';
-    form.querySelector('[name="passepartout"]').value = data.passepartout ?? '';
+    const passepartoutSelect = form.querySelector('[name="passepartout_id"]');
+    if (passepartoutSelect && data.passepartout && window.PASSEPARTOUT_MAP) {
+        const passepartoutId = window.PASSEPARTOUT_MAP[data.passepartout];
+        passepartoutSelect.value = passepartoutId ? String(passepartoutId) : '';
+    }
     form.querySelector('[name="back"]').value = data.back ?? '';
     form.querySelector('[name="hanging"]').value = data.hanging ?? '';
     form.querySelector('[name="customer_name"]').value = data.customer_name ?? '';
@@ -79,8 +84,73 @@ function editOrder(orderId) {
 
     form.action = `${window.BASE_PATH}/edit_order/${orderId}`;
 
+    updateOrderPricing(form);
+
     const modal = new bootstrap.Modal(document.getElementById('editOrderModal'));
     modal.show();
+}
+
+function collectOrderFormData(form) {
+    const formData = new FormData(form);
+    return formData;
+}
+
+async function updateOrderPricing(form) {
+    const preview = form.querySelector('.order-pricing-preview');
+    if (!preview) return;
+
+    const formData = new FormData(form);
+    const width = parseFloat(formData.get('width'));
+    const height = parseFloat(formData.get('height'));
+
+    if (!width || !height) {
+        preview.style.display = 'none';
+        return;
+    }
+
+    try {
+        const response = await fetch(`${window.BASE_PATH}/calculate_price`, {
+            method: 'POST',
+            body: formData
+        });
+        if (!response.ok) {
+            preview.style.display = 'none';
+            return;
+        }
+
+        const pricing = await response.json();
+        const lines = [];
+
+        if (pricing.profile_cost > 0) {
+            lines.push(`Профил: ${pricing.profile_meters} л.м. → ${pricing.profile_cost.toFixed(2)} €`);
+        }
+        if (pricing.glass_cost > 0) {
+            lines.push(`Стъкло: ${pricing.glass_sqm} кв.м. → ${pricing.glass_cost.toFixed(2)} €`);
+        }
+        if (pricing.passepartout) {
+            const pp = pricing.passepartout;
+            lines.push(
+                `Паспарту: фактурирано ${pp.bill_width}×${pp.bill_height} cm (${pp.sheet_name}) → ${pricing.passepartout_cost.toFixed(2)} €`
+            );
+        }
+        if (pricing.total > 0) {
+            lines.push(`<strong>Общо материали: ${pricing.total.toFixed(2)} €</strong>`);
+            const priceInput = form.querySelector('[name="price"]');
+            if (priceInput && priceInput.value === '') {
+                priceInput.placeholder = pricing.total.toFixed(2);
+            }
+        }
+
+        if (lines.length === 0) {
+            preview.style.display = 'none';
+            return;
+        }
+
+        preview.innerHTML = lines.join('<br>');
+        preview.style.display = 'block';
+    } catch (error) {
+        preview.style.display = 'none';
+    }
 }
 
 // Function to confirm order deletion
@@ -189,6 +259,19 @@ document.addEventListener('DOMContentLoaded', function () {
 
     floatActions.addEventListener('mouseleave', function () {
         floatActions.style.display = 'none';
+    });
+
+    document.querySelectorAll('.order-form').forEach((form) => {
+        form.addEventListener('input', function (event) {
+            if (event.target.classList.contains('order-price-trigger') || event.target.name === 'additional_profiles[]') {
+                updateOrderPricing(form);
+            }
+        });
+        form.addEventListener('change', function (event) {
+            if (event.target.classList.contains('order-price-trigger') || event.target.name === 'passepartout_id') {
+                updateOrderPricing(form);
+            }
+        });
     });
 });
 

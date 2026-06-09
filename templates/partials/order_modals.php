@@ -6,7 +6,7 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <form id="addOrderForm" action="<?= url_for('add_order') ?>" method="post">
+                <form id="addOrderForm" class="order-form" action="<?= url_for('add_order') ?>" method="post">
                     <div class="row">
                         <div class="col-md-6 mb-3">
                             <label class="form-label">Дата на получаване</label>
@@ -14,47 +14,14 @@
                         </div>
                         <div class="col-md-3 mb-3">
                             <label class="form-label">Ширина (cm)</label>
-                            <input type="number" class="form-control" name="width" step="0.1">
+                            <input type="number" class="form-control order-price-trigger" name="width" step="0.1">
                         </div>
                         <div class="col-md-3 mb-3">
                             <label class="form-label">Височина (cm)</label>
-                            <input type="number" class="form-control" name="height" step="0.1">
+                            <input type="number" class="form-control order-price-trigger" name="height" step="0.1">
                         </div>
                     </div>
-                    <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">Профил</label>
-                            <div class="input-group">
-                                <input type="text" class="form-control" name="profile">
-                                <button type="button" class="btn btn-outline-secondary" onclick="addProfileField('additionalProfiles')">
-                                    <i class="fas fa-plus"></i>
-                                </button>
-                            </div>
-                            <div id="additionalProfiles"></div>
-                        </div>
-                        <div class="col-md-3 mb-3">
-                            <label class="form-label">Брой рамки</label>
-                            <input type="number" class="form-control" name="frame_count" value="1" min="1">
-                        </div>
-                    </div>
-                    <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">Стъкло</label>
-                            <select class="form-select" name="glass">
-                                <option value=""></option>
-                                <option value="Антирефлексно">Анти</option>
-                                <option value="Нормално">Норм</option>
-                                <option value="Музейно">Музейно</option>
-                                <option value="Консервационно">Конс</option>
-                                <option value="Огледало">Огледало</option>
-                                <option value="Плексиглас">Плекси</option>
-                            </select>
-                        </div>
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">Паспарту</label>
-                            <input type="text" class="form-control" name="passepartout">
-                        </div>
-                    </div>
+                    <?php $additionalProfilesId = 'additionalProfiles'; include __DIR__ . '/order_form_materials.php'; ?>
                     <div class="row">
                         <div class="col-md-6 mb-3">
                             <label class="form-label">Гръб</label>
@@ -80,7 +47,7 @@
                             <label class="form-label">Име на клиент</label>
                             <input type="text" class="form-control" name="customer_name">
                         </div>
-                        <div class="col-md-3 mb-3">
+                        <div class="col-md-6 mb-3">
                             <label class="form-label">Описание</label>
                             <textarea class="form-control" name="description" rows="2"></textarea>
                         </div>
@@ -89,6 +56,7 @@
                         <div class="col-md-4 mb-3">
                             <label class="form-label">Цена</label>
                             <input type="number" class="form-control" name="price" step="0.01">
+                            <div class="form-text">Оставете празно за автоматично изчисление</div>
                         </div>
                         <div class="col-md-4 mb-3">
                             <label class="form-label">Аванс</label>
@@ -131,7 +99,7 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <form id="editOrderForm" method="post">
+                <form id="editOrderForm" class="order-form" method="post">
                     <div class="row">
                         <div class="col-md-6 mb-3">
                             <label class="form-label">Дата на получаване</label>
@@ -139,47 +107,14 @@
                         </div>
                         <div class="col-md-3 mb-3">
                             <label class="form-label">Ширина (cm)</label>
-                            <input type="number" class="form-control" name="width" step="0.1">
+                            <input type="number" class="form-control order-price-trigger" name="width" step="0.1">
                         </div>
                         <div class="col-md-3 mb-3">
                             <label class="form-label">Височина (cm)</label>
-                            <input type="number" class="form-control" name="height" step="0.1">
+                            <input type="number" class="form-control order-price-trigger" name="height" step="0.1">
                         </div>
                     </div>
-                    <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">Профил</label>
-                            <div class="input-group">
-                                <input type="text" class="form-control" name="profile">
-                                <button type="button" class="btn btn-outline-secondary" onclick="addProfileField('additionalProfilesEdit')">
-                                    <i class="fas fa-plus"></i>
-                                </button>
-                            </div>
-                            <div id="additionalProfilesEdit"></div>
-                        </div>
-                        <div class="col-md-3 mb-3">
-                            <label class="form-label">Брой рамки</label>
-                            <input type="number" class="form-control" name="frame_count" min="1">
-                        </div>
-                    </div>
-                    <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">Стъкло</label>
-                            <select class="form-select" name="glass">
-                                <option value=""></option>
-                                <option value="Антирефлексно">Анти</option>
-                                <option value="Нормално">Норм</option>
-                                <option value="Музейно">Музейно</option>
-                                <option value="Консервационно">Конс</option>
-                                <option value="Огледало">Огледало</option>
-                                <option value="Плексиглас">Плекси</option>
-                            </select>
-                        </div>
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">Паспарту</label>
-                            <input type="text" class="form-control" name="passepartout">
-                        </div>
-                    </div>
+                    <?php $additionalProfilesId = 'additionalProfilesEdit'; include __DIR__ . '/order_form_materials.php'; ?>
                     <div class="row">
                         <div class="col-md-6 mb-3">
                             <label class="form-label">Гръб</label>
@@ -205,16 +140,16 @@
                             <label class="form-label">Име на клиент</label>
                             <input type="text" class="form-control" name="customer_name">
                         </div>
-                        <div class="col-md-3 mb-3">
+                        <div class="col-md-6 mb-3">
                             <label class="form-label">Описание</label>
                             <textarea class="form-control" name="description" rows="2" id="editDescription"></textarea>
-                            <div class="form-text" id="previousDescription" style="color: #888; font-size: 0.95em;"></div>
                         </div>
                     </div>
                     <div class="row">
                         <div class="col-md-4 mb-3">
                             <label class="form-label">Цена</label>
                             <input type="number" class="form-control" name="price" step="0.01">
+                            <div class="form-text">Оставете празно за автоматично изчисление</div>
                         </div>
                         <div class="col-md-4 mb-3">
                             <label class="form-label">Аванс</label>
@@ -257,7 +192,7 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <form id="addSubOrderForm" method="post">
+                <form id="addSubOrderForm" class="order-form" method="post">
                     <div class="row">
                         <div class="col-md-6 mb-3">
                             <label class="form-label">Дата на получаване</label>
@@ -265,47 +200,14 @@
                         </div>
                         <div class="col-md-3 mb-3">
                             <label class="form-label">Ширина (cm)</label>
-                            <input type="number" class="form-control" name="width" step="0.1">
+                            <input type="number" class="form-control order-price-trigger" name="width" step="0.1">
                         </div>
                         <div class="col-md-3 mb-3">
                             <label class="form-label">Височина (cm)</label>
-                            <input type="number" class="form-control" name="height" step="0.1">
+                            <input type="number" class="form-control order-price-trigger" name="height" step="0.1">
                         </div>
                     </div>
-                    <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">Профил</label>
-                            <div class="input-group">
-                                <input type="text" class="form-control" name="profile">
-                                <button type="button" class="btn btn-outline-secondary" onclick="addProfileField('additionalProfilesSub')">
-                                    <i class="fas fa-plus"></i>
-                                </button>
-                            </div>
-                            <div id="additionalProfilesSub"></div>
-                        </div>
-                        <div class="col-md-3 mb-3">
-                            <label class="form-label">Брой рамки</label>
-                            <input type="number" class="form-control" name="frame_count" value="1" min="1">
-                        </div>
-                    </div>
-                    <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">Стъкло</label>
-                            <select class="form-select" name="glass">
-                                <option value=""></option>
-                                <option value="Антирефлексно">Анти</option>
-                                <option value="Нормално">Норм</option>
-                                <option value="Музейно">Музейно</option>
-                                <option value="Консервационно">Конс</option>
-                                <option value="Огледало">Огледало</option>
-                                <option value="Плексиглас">Плекси</option>
-                            </select>
-                        </div>
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">Паспарту</label>
-                            <input type="text" class="form-control" name="passepartout">
-                        </div>
-                    </div>
+                    <?php $additionalProfilesId = 'additionalProfilesSub'; include __DIR__ . '/order_form_materials.php'; ?>
                     <div class="row">
                         <div class="col-md-6 mb-3">
                             <label class="form-label">Гръб</label>
@@ -334,6 +236,7 @@
                         <div class="col-md-6 mb-3">
                             <label class="form-label">Цена</label>
                             <input type="number" class="form-control" name="price" step="0.01">
+                            <div class="form-text">Оставете празно за автоматично изчисление</div>
                         </div>
                     </div>
                     <div class="row">

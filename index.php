@@ -125,7 +125,27 @@ if ($uri === '/interface') {
     require_login();
     $conn = get_db_connection();
     $orders = $conn->query('SELECT * FROM orders ORDER BY order_number, sub_order_number')->fetchAll();
-    render('interface.php', ['title' => 'Поръчки', 'current_page' => 'interface', 'orders' => $orders, 'extra_css' => 'interface.css', 'extra_js' => 'interface.js']);
+    $profiles = $conn->query('SELECT id, name, price FROM profiles ORDER BY name')->fetchAll();
+    $glasses = $conn->query('SELECT id, name, price FROM glasses ORDER BY name')->fetchAll();
+    $passepartouts = $conn->query('SELECT id, name, price FROM passepartouts ORDER BY name')->fetchAll();
+    render('interface.php', [
+        'title' => 'Поръчки',
+        'current_page' => 'interface',
+        'orders' => $orders,
+        'profiles' => $profiles,
+        'glasses' => $glasses,
+        'passepartouts' => $passepartouts,
+        'extra_css' => 'interface.css',
+        'extra_js' => 'interface.js',
+    ]);
+    exit;
+}
+
+if ($uri === '/calculate_price' && $method === 'POST') {
+    require_login();
+    header('Content-Type: application/json');
+    $order = build_order_from_post();
+    echo json_encode(calculate_order_pricing(get_db_connection(), $order));
     exit;
 }
 
@@ -148,8 +168,29 @@ if ($uri === '/glasses') {
 if ($uri === '/passepartouts') {
     require_login();
     $conn = get_db_connection();
-    $passepartouts = $conn->query('SELECT * FROM passepartouts')->fetchAll();
-    render('passepartouts.php', ['title' => 'Паспарту', 'current_page' => 'passepartouts', 'passepartouts' => $passepartouts, 'extra_js' => 'passepartouts.js']);
+    $passepartouts = $conn->query('SELECT * FROM passepartouts ORDER BY name')->fetchAll();
+    foreach ($passepartouts as &$passepartoutRow) {
+        $passepartoutRow['sheet_type_ids'] = get_passepartout_sheet_type_ids($conn, (int)$passepartoutRow['id']);
+        $names = [];
+        foreach ($passepartoutRow['sheet_type_ids'] as $sheetTypeId) {
+            $stmt = $conn->prepare('SELECT name FROM passepartout_sheet_types WHERE id = ?');
+            $stmt->execute([$sheetTypeId]);
+            $name = $stmt->fetchColumn();
+            if ($name) {
+                $names[] = $name;
+            }
+        }
+        $passepartoutRow['sheet_types'] = implode(', ', $names);
+    }
+    unset($passepartoutRow);
+    $sheetTypes = get_all_sheet_types($conn);
+    render('passepartouts.php', [
+        'title' => 'Паспарту',
+        'current_page' => 'passepartouts',
+        'passepartouts' => $passepartouts,
+        'sheet_types' => $sheetTypes,
+        'extra_js' => 'passepartouts.js',
+    ]);
     exit;
 }
 
@@ -198,44 +239,40 @@ if ($uri === '/add_order' && $method === 'POST') {
 
         $lastOrder = $conn->query('SELECT MAX(order_number) FROM orders')->fetchColumn();
         $orderNumber = ($lastOrder ?: 0) + 1;
-        $additionalProfiles = get_additional_profiles();
+        $order = prepare_order_persistence($conn, $_POST);
+
         $stmt = $conn->prepare('
             INSERT INTO orders (
                 order_number, sub_order_number, date, width, height, profile, glass, passepartout,
+                passepartout_bill_width, passepartout_bill_height,
                 back, hanging, customer_name, price, paid, collected,
                 additional_profiles, frame_count, advance_payment, discount, description
-            ) VALUES (?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ');
         $stmt->execute([
             $orderNumber,
-            $_POST['date'] ?? '',
-            $_POST['width'] ?? null,
-            $_POST['height'] ?? null,
-            $_POST['profile'] ?? '',
-            $_POST['glass'] ?? '',
-            $_POST['passepartout'] ?? '',
-            $_POST['back'] ?? '',
-            $_POST['hanging'] ?? '',
-            $_POST['customer_name'] ?? '',
-            $_POST['price'] ?? null,
-            isset($_POST['paid']) ? 1 : 0,
-            isset($_POST['collected']) ? 1 : 0,
-            $additionalProfiles,
-            $_POST['frame_count'] ?? 1,
-            $_POST['advance_payment'] ?? null,
-            $_POST['discount'] ?? null,
-            $_POST['description'] ?? '',
+            $order['date'],
+            $order['width'],
+            $order['height'],
+            $order['profile'],
+            $order['glass'],
+            $order['passepartout'],
+            $order['passepartout_bill_width'],
+            $order['passepartout_bill_height'],
+            $order['back'],
+            $order['hanging'],
+            $order['customer_name'],
+            $order['price'],
+            $order['paid'],
+            $order['collected'],
+            $order['additional_profiles'],
+            $order['frame_count'],
+            $order['advance_payment'],
+            $order['discount'],
+            $order['description'],
         ]);
 
-        deduct_stock_for_order($conn, [
-            'width' => $_POST['width'] ?? null,
-            'height' => $_POST['height'] ?? null,
-            'profile' => $_POST['profile'] ?? '',
-            'glass' => $_POST['glass'] ?? '',
-            'passepartout' => $_POST['passepartout'] ?? '',
-            'additional_profiles' => $additionalProfiles,
-            'frame_count' => $_POST['frame_count'] ?? 1,
-        ]);
+        deduct_stock_for_order($conn, $order['stock_order']);
 
         $conn->commit();
         flash('Поръчката е добавена успешно!', 'success');
@@ -261,49 +298,43 @@ if (preg_match('#^/edit_order/(\d+)$#', $uri, $m) && $method === 'POST') {
             redirect('/interface');
         }
 
-        $additionalProfiles = get_additional_profiles();
-        $newOrder = [
-            'width' => $_POST['width'] ?? null,
-            'height' => $_POST['height'] ?? null,
-            'profile' => $_POST['profile'] ?? '',
-            'glass' => $_POST['glass'] ?? '',
-            'passepartout' => $_POST['passepartout'] ?? '',
-            'additional_profiles' => $additionalProfiles,
-            'frame_count' => $_POST['frame_count'] ?? 1,
-        ];
+        $order = prepare_order_persistence($conn, $_POST);
 
         $conn->beginTransaction();
 
         if (!(bool)$existingOrder['collected']) {
-            adjust_stock_for_order_edit($conn, $existingOrder, $newOrder);
+            adjust_stock_for_order_edit($conn, $existingOrder, $order['stock_order']);
         }
 
         $stmt = $conn->prepare('
             UPDATE orders SET
                 date = ?, width = ?, height = ?, profile = ?, glass = ?,
-                passepartout = ?, back = ?, hanging = ?, customer_name = ?,
+                passepartout = ?, passepartout_bill_width = ?, passepartout_bill_height = ?,
+                back = ?, hanging = ?, customer_name = ?,
                 price = ?, paid = ?, collected = ?, additional_profiles = ?,
                 frame_count = ?, advance_payment = ?, discount = ?, description = ?
             WHERE id = ?
         ');
         $stmt->execute([
-            $_POST['date'] ?? '',
-            $_POST['width'] ?? null,
-            $_POST['height'] ?? null,
-            $_POST['profile'] ?? '',
-            $_POST['glass'] ?? '',
-            $_POST['passepartout'] ?? '',
-            $_POST['back'] ?? '',
-            $_POST['hanging'] ?? '',
-            $_POST['customer_name'] ?? '',
-            $_POST['price'] ?? null,
-            isset($_POST['paid']) ? 1 : 0,
-            isset($_POST['collected']) ? 1 : 0,
-            $additionalProfiles,
-            $_POST['frame_count'] ?? 1,
-            $_POST['advance_payment'] ?? null,
-            $_POST['discount'] ?? null,
-            $_POST['description'] ?? '',
+            $order['date'],
+            $order['width'],
+            $order['height'],
+            $order['profile'],
+            $order['glass'],
+            $order['passepartout'],
+            $order['passepartout_bill_width'],
+            $order['passepartout_bill_height'],
+            $order['back'],
+            $order['hanging'],
+            $order['customer_name'],
+            $order['price'],
+            $order['paid'],
+            $order['collected'],
+            $order['additional_profiles'],
+            $order['frame_count'],
+            $order['advance_payment'],
+            $order['discount'],
+            $order['description'],
             $orderId,
         ]);
 
@@ -383,45 +414,40 @@ if (preg_match('#^/add_sub_order/(\d+)$#', $uri, $m) && $method === 'POST') {
 
         $conn->beginTransaction();
 
-        $additionalProfiles = get_additional_profiles();
+        $order = prepare_order_persistence($conn, $_POST, $mainOrder['customer_name']);
         $stmt = $conn->prepare('
             INSERT INTO orders (
                 order_number, sub_order_number, date, width, height, profile, glass, passepartout,
+                passepartout_bill_width, passepartout_bill_height,
                 back, hanging, customer_name, price, paid, collected,
                 additional_profiles, frame_count, advance_payment, discount, description
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ');
         $stmt->execute([
             $mainOrder['order_number'],
             $subOrderNumber,
-            $_POST['date'] ?? '',
-            $_POST['width'] ?? null,
-            $_POST['height'] ?? null,
-            $_POST['profile'] ?? '',
-            $_POST['glass'] ?? '',
-            $_POST['passepartout'] ?? '',
-            $_POST['back'] ?? '',
-            $_POST['hanging'] ?? '',
-            $mainOrder['customer_name'],
-            $_POST['price'] ?? null,
-            isset($_POST['paid']) ? 1 : 0,
-            isset($_POST['collected']) ? 1 : 0,
-            $additionalProfiles,
-            $_POST['frame_count'] ?? 1,
-            $_POST['advance_payment'] ?? null,
-            $_POST['discount'] ?? null,
-            $_POST['description'] ?? '',
+            $order['date'],
+            $order['width'],
+            $order['height'],
+            $order['profile'],
+            $order['glass'],
+            $order['passepartout'],
+            $order['passepartout_bill_width'],
+            $order['passepartout_bill_height'],
+            $order['back'],
+            $order['hanging'],
+            $order['customer_name'],
+            $order['price'],
+            $order['paid'],
+            $order['collected'],
+            $order['additional_profiles'],
+            $order['frame_count'],
+            $order['advance_payment'],
+            $order['discount'],
+            $order['description'],
         ]);
 
-        deduct_stock_for_order($conn, [
-            'width' => $_POST['width'] ?? null,
-            'height' => $_POST['height'] ?? null,
-            'profile' => $_POST['profile'] ?? '',
-            'glass' => $_POST['glass'] ?? '',
-            'passepartout' => $_POST['passepartout'] ?? '',
-            'additional_profiles' => $additionalProfiles,
-            'frame_count' => $_POST['frame_count'] ?? 1,
-        ]);
+        deduct_stock_for_order($conn, $order['stock_order']);
 
         $conn->commit();
         flash('Подпоръчката е добавена успешно!', 'success');
@@ -522,10 +548,17 @@ if ($uri === '/add_passepartout' && $method === 'POST') {
     require_login();
     $conn = get_db_connection();
     try {
+        $conn->beginTransaction();
         $stmt = $conn->prepare('INSERT INTO passepartouts (name, price, stock) VALUES (?, ?, ?)');
         $stmt->execute([$_POST['name'], $_POST['price'], $_POST['stock']]);
+        $passepartoutId = (int)$conn->lastInsertId();
+        save_passepartout_sheet_types($conn, $passepartoutId, $_POST['sheet_types'] ?? []);
+        $conn->commit();
         flash('Паспартуто е добавено успешно!', 'success');
     } catch (Exception $e) {
+        if ($conn->inTransaction()) {
+            $conn->rollBack();
+        }
         flash('Грешка при добавяне на паспарту: ' . $e->getMessage(), 'danger');
     }
     redirect('/passepartouts');
@@ -535,10 +568,17 @@ if (preg_match('#^/edit_passepartout/(\d+)$#', $uri, $m) && $method === 'POST') 
     require_login();
     $conn = get_db_connection();
     try {
+        $passepartoutId = (int)$m[1];
+        $conn->beginTransaction();
         $stmt = $conn->prepare('UPDATE passepartouts SET name = ?, price = ?, stock = ? WHERE id = ?');
-        $stmt->execute([$_POST['name'], $_POST['price'], $_POST['stock'], (int)$m[1]]);
+        $stmt->execute([$_POST['name'], $_POST['price'], $_POST['stock'], $passepartoutId]);
+        save_passepartout_sheet_types($conn, $passepartoutId, $_POST['sheet_types'] ?? []);
+        $conn->commit();
         flash('Паспартуто е редактирано успешно!', 'success');
     } catch (Exception $e) {
+        if ($conn->inTransaction()) {
+            $conn->rollBack();
+        }
         flash('Грешка при редактиране на паспарту: ' . $e->getMessage(), 'danger');
     }
     redirect('/passepartouts');

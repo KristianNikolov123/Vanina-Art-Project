@@ -22,8 +22,8 @@
             <thead class="table-dark">
                 <tr>
                     <th>Име</th>
-                    <th>Цена(€/кв.м.)</th>
-                    <th>Наличност (кв.м.)</th>
+                    <th>Цена (€/л.м.)</th>
+                    <th>Наличност (л.м.)</th>
                     <th>Действия</th>
                 </tr>
             </thead>
@@ -66,11 +66,11 @@
                         <input type="text" class="form-control" name="name" required>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">Цена(€/кв.м.)</label>
+                        <label class="form-label">Цена (€/л.м.)</label>
                         <input type="number" class="form-control" name="price" step="0.01" required>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">Наличност (кв.м.)</label>
+                        <label class="form-label">Наличност (л.м.)</label>
                         <input type="number" class="form-control" name="stock" required>
                     </div>
                 </form>
@@ -97,11 +97,11 @@
                         <input type="text" class="form-control" name="name" required>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">Цена(€/кв.м.)</label>
+                        <label class="form-label">Цена (€/л.м.)</label>
                         <input type="number" class="form-control" name="price" step="0.01" required>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">Наличност (кв.м.)</label>
+                        <label class="form-label">Наличност (л.м.)</label>
                         <input type="number" class="form-control" name="stock" required>
                     </div>
                 </form>

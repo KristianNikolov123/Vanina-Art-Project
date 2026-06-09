@@ -164,3 +164,60 @@ function get_additional_profiles(): ?string
     }
     return null;
 }
+
+function build_order_from_post(?string $customerName = null): array
+{
+    $passepartoutId = (int)($_POST['passepartout_id'] ?? 0);
+    $passepartoutName = trim($_POST['passepartout'] ?? '');
+
+    return [
+        'width' => $_POST['width'] ?? null,
+        'height' => $_POST['height'] ?? null,
+        'profile' => $_POST['profile'] ?? '',
+        'glass' => $_POST['glass'] ?? '',
+        'passepartout' => $passepartoutName,
+        'passepartout_id' => $passepartoutId > 0 ? $passepartoutId : null,
+        'additional_profiles' => get_additional_profiles(),
+        'frame_count' => $_POST['frame_count'] ?? 1,
+        'customer_name' => $customerName ?? ($_POST['customer_name'] ?? ''),
+    ];
+}
+
+function resolve_order_price(PDO $conn, array $order, ?string $postedPrice): ?float
+{
+    if ($postedPrice !== null && $postedPrice !== '') {
+        return (float)$postedPrice;
+    }
+
+    $pricing = calculate_order_pricing($conn, $order);
+    return $pricing['total'] > 0 ? $pricing['total'] : null;
+}
+
+function prepare_order_persistence(PDO $conn, array $post, ?string $customerName = null): array
+{
+    $orderData = build_order_from_post($customerName);
+    $stockOrder = enrich_order_pricing_fields($conn, $orderData);
+
+    return [
+        'stock_order' => $stockOrder,
+        'date' => $post['date'] ?? '',
+        'width' => $post['width'] ?? null,
+        'height' => $post['height'] ?? null,
+        'profile' => $post['profile'] ?? '',
+        'glass' => $post['glass'] ?? '',
+        'passepartout' => $stockOrder['passepartout'] ?? ($post['passepartout'] ?? ''),
+        'passepartout_bill_width' => $stockOrder['passepartout_bill_width'] ?? null,
+        'passepartout_bill_height' => $stockOrder['passepartout_bill_height'] ?? null,
+        'back' => $post['back'] ?? '',
+        'hanging' => $post['hanging'] ?? '',
+        'customer_name' => $customerName ?? ($post['customer_name'] ?? ''),
+        'price' => resolve_order_price($conn, $orderData, $post['price'] ?? null),
+        'paid' => isset($post['paid']) ? 1 : 0,
+        'collected' => isset($post['collected']) ? 1 : 0,
+        'additional_profiles' => get_additional_profiles(),
+        'frame_count' => $post['frame_count'] ?? 1,
+        'advance_payment' => $post['advance_payment'] ?? null,
+        'discount' => $post['discount'] ?? null,
+        'description' => $post['description'] ?? '',
+    ];
+}

@@ -26,6 +26,10 @@
         </div>
     </div>
 
+    <script>
+        window.PASSEPARTOUT_MAP = <?= json_encode(array_column($passepartouts, 'id', 'name'), JSON_UNESCAPED_UNICODE) ?>;
+    </script>
+
     <div class="orders-container">
         <div class="table-container">
             <div class="table-responsive" style="position: relative;">
@@ -65,6 +69,8 @@
                                 'glass' => $order['glass'] ?? '',
                                 'back' => $order['back'] ?? '',
                                 'passepartout' => $order['passepartout'] ?? '',
+                                'passepartout_bill_width' => $order['passepartout_bill_width'] ?? null,
+                                'passepartout_bill_height' => $order['passepartout_bill_height'] ?? null,
                                 'hanging' => $order['hanging'] ?? '',
                                 'customer_name' => $order['customer_name'] ?? '',
                                 'price' => $order['price'],
@@ -93,7 +99,12 @@
                             </td>
                             <td class="glass"><?= short_glass($order['glass']) ?></td>
                             <td class="back"><?= short_back($order['back']) ?></td>
-                            <td class="passepartout"><?= e($order['passepartout']) ?></td>
+                            <td class="passepartout">
+                                <?= e($order['passepartout']) ?>
+                                <?php if (!empty($order['passepartout_bill_width']) && !empty($order['passepartout_bill_height'])): ?>
+                                    <small class="text-muted d-block">фактурирано: <?= (int)$order['passepartout_bill_width'] ?>×<?= (int)$order['passepartout_bill_height'] ?> cm</small>
+                                <?php endif; ?>
+                            </td>
                             <td class="hanging"><?= short_hanging($order['hanging']) ?></td>
                             <td class="price"><?= e($order['price']) ?></td>
                             <td class="advance-payment"><?= e($order['advance_payment']) ?></td>
