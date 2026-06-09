@@ -86,14 +86,15 @@ class User
     public static function getLoginLogs(int $limit = 50): array
     {
         $conn = get_db_connection();
-        $stmt = $conn->prepare('
+        $limit = max(1, $limit);
+        $stmt = $conn->prepare("
             SELECT l.*, u.email
             FROM login_logs l
             JOIN users u ON l.user_id = u.id
             ORDER BY l.login_time DESC
-            LIMIT ?
-        ');
-        $stmt->execute([$limit]);
+            LIMIT {$limit}
+        ");
+        $stmt->execute();
         $logs = $stmt->fetchAll();
 
         $tz = new DateTimeZone('Europe/Sofia');

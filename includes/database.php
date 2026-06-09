@@ -4,8 +4,21 @@ function get_db_connection(): PDO
 {
     static $pdo = null;
     if ($pdo === null) {
-        $dbPath = ROOT_PATH . '/database.db';
-        $pdo = new PDO('sqlite:' . $dbPath);
+        $driver = $_ENV['DB_DRIVER'] ?? 'sqlite';
+
+        if ($driver === 'mysql') {
+            $host = $_ENV['DB_HOST'] ?? '127.0.0.1';
+            $port = $_ENV['DB_PORT'] ?? '3306';
+            $name = $_ENV['DB_NAME'] ?? 'vanina_art';
+            $user = $_ENV['DB_USER'] ?? 'root';
+            $pass = $_ENV['DB_PASSWORD'] ?? '';
+            $dsn = "mysql:host={$host};port={$port};dbname={$name};charset=utf8mb4";
+            $pdo = new PDO($dsn, $user, $pass);
+        } else {
+            $dbPath = ROOT_PATH . '/database.db';
+            $pdo = new PDO('sqlite:' . $dbPath);
+        }
+
         $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
         $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
     }
@@ -14,6 +27,10 @@ function get_db_connection(): PDO
 
 function init_db(): void
 {
+    if (($_ENV['DB_DRIVER'] ?? 'sqlite') === 'mysql') {
+        return;
+    }
+
     $conn = get_db_connection();
 
     $conn->exec('

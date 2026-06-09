@@ -6,6 +6,11 @@ function send_verification_email_to_admin(string $newUserEmail, string $newUserU
         return false;
     }
 
+    if (ADMIN_EMAIL_PASSWORD === 'your-app-password') {
+        flash('SMTP не е конфигуриран: сменете ADMIN_EMAIL_PASSWORD в .env с Gmail App Password.', 'warning');
+        return false;
+    }
+
     $verifyUrl = full_url('/verify/' . urlencode($newUserEmail));
     $subject = 'Нова заявка за регистрация - Ванина Арт';
     $body = "Нов потребител иска да се регистрира:\n"
@@ -27,27 +32,64 @@ function send_smtp_email(string $to, string $subject, string $body): bool
             30
         );
         if (!$socket) {
-            flash("Грешка при изпращане на имейл: {$errstr}", 'error');
+            flash("Грешка при връзка със SMTP: {$errstr}", 'error');
             return false;
         }
 
-        smtp_read($socket);
+        if (!smtp_expect(smtp_read($socket), 220)) {
+            flash('Грешка при SMTP: неочакван отговор от сървъра.', 'error');
+            fclose($socket);
+            return false;
+        }
+
         smtp_write($socket, 'EHLO localhost');
-        smtp_read($socket);
+        if (!smtp_expect(smtp_read($socket), 250)) {
+            flash('Грешка при SMTP EHLO.', 'error');
+            fclose($socket);
+            return false;
+        }
 
         smtp_write($socket, 'AUTH LOGIN');
-        smtp_read($socket);
+        if (!smtp_expect(smtp_read($socket), 334)) {
+            flash('Грешка при SMTP AUTH.', 'error');
+            fclose($socket);
+            return false;
+        }
+
         smtp_write($socket, base64_encode(ADMIN_EMAIL));
-        smtp_read($socket);
+        if (!smtp_expect(smtp_read($socket), 334)) {
+            flash('Грешка при SMTP: невалиден имейл.', 'error');
+            fclose($socket);
+            return false;
+        }
+
         smtp_write($socket, base64_encode(ADMIN_EMAIL_PASSWORD));
-        smtp_read($socket);
+        if (!smtp_expect(smtp_read($socket), 235)) {
+            flash('Грешка при SMTP: Gmail отхвърли паролата. Използвайте App Password, не обикновената парола.', 'error');
+            fclose($socket);
+            return false;
+        }
 
         smtp_write($socket, 'MAIL FROM:<' . ADMIN_EMAIL . '>');
-        smtp_read($socket);
+        if (!smtp_expect(smtp_read($socket), 250)) {
+            flash('Грешка при SMTP MAIL FROM.', 'error');
+            fclose($socket);
+            return false;
+        }
+
         smtp_write($socket, 'RCPT TO:<' . $to . '>');
-        smtp_read($socket);
+        if (!smtp_expect(smtp_read($socket), 250)) {
+            flash('Грешка при SMTP RCPT TO.', 'error');
+            fclose($socket);
+            return false;
+        }
+
         smtp_write($socket, 'DATA');
-        smtp_read($socket);
+        if (!smtp_expect(smtp_read($socket), 354)) {
+            flash('Грешка при SMTP DATA.', 'error');
+            fclose($socket);
+            return false;
+        }
 
         $message = "From: " . ADMIN_EMAIL . "\r\n"
             . "To: {$to}\r\n"
@@ -57,7 +99,12 @@ function send_smtp_email(string $to, string $subject, string $body): bool
             . $body . "\r\n.";
 
         smtp_write($socket, $message);
-        smtp_read($socket);
+        if (!smtp_expect(smtp_read($socket), 250)) {
+            flash('Грешка при изпращане на имейла.', 'error');
+            fclose($socket);
+            return false;
+        }
+
         smtp_write($socket, 'QUIT');
         fclose($socket);
         return true;
@@ -65,6 +112,11 @@ function send_smtp_email(string $to, string $subject, string $body): bool
         flash('Грешка при изпращане на имейл: ' . $e->getMessage(), 'error');
         return false;
     }
+}
+
+function smtp_expect(string $response, int $code): bool
+{
+    return str_starts_with(trim($response), (string)$code);
 }
 
 function smtp_write($socket, string $data): void

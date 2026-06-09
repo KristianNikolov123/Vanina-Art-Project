@@ -55,8 +55,27 @@
                         <?php
                             $desc = trim($order['description'] ?? '');
                             $descAttr = htmlspecialchars(str_replace(["\r", "\n"], ['\\r', '\\n'], $desc), ENT_QUOTES, 'UTF-8');
+                            $orderData = htmlspecialchars(json_encode([
+                                'date' => $order['date'] ?? '',
+                                'width' => $order['width'],
+                                'height' => $order['height'],
+                                'profile' => $order['profile'] ?? '',
+                                'additional_profiles' => $order['additional_profiles'] ?? '',
+                                'frame_count' => $order['frame_count'] ?? 1,
+                                'glass' => $order['glass'] ?? '',
+                                'back' => $order['back'] ?? '',
+                                'passepartout' => $order['passepartout'] ?? '',
+                                'hanging' => $order['hanging'] ?? '',
+                                'customer_name' => $order['customer_name'] ?? '',
+                                'price' => $order['price'],
+                                'advance_payment' => $order['advance_payment'],
+                                'discount' => $order['discount'],
+                                'description' => $order['description'] ?? '',
+                                'paid' => (bool)$order['paid'],
+                                'collected' => (bool)$order['collected'],
+                            ], JSON_UNESCAPED_UNICODE), ENT_QUOTES, 'UTF-8');
                         ?>
-                        <tr class="order-row" data-order-id="<?= (int)$order['id'] ?>">
+                        <tr class="order-row" data-order-id="<?= (int)$order['id'] ?>" data-order="<?= $orderData ?>">
                             <td><?= (int)$order['order_number'] ?><?= $order['sub_order_number'] > 0 ? '.' . (int)$order['sub_order_number'] : '' ?></td>
                             <td class="date"><?= format_date_ddmmyyyy($order['date']) ?></td>
                             <td><span class="width"><?= e($order['width']) ?></span>x<span class="height"><?= e($order['height']) ?></span> cm</td>

@@ -31,6 +31,7 @@ define('SMTP_PORT', (int)($_ENV['SMTP_PORT'] ?? 465));
 require_once ROOT_PATH . '/includes/database.php';
 require_once ROOT_PATH . '/includes/User.php';
 require_once ROOT_PATH . '/includes/helpers.php';
+require_once ROOT_PATH . '/includes/inventory.php';
 require_once ROOT_PATH . '/includes/mail.php';
 
 init_db();

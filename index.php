@@ -194,8 +194,11 @@ if ($uri === '/add_order' && $method === 'POST') {
     require_login();
     $conn = get_db_connection();
     try {
+        $conn->beginTransaction();
+
         $lastOrder = $conn->query('SELECT MAX(order_number) FROM orders')->fetchColumn();
         $orderNumber = ($lastOrder ?: 0) + 1;
+        $additionalProfiles = get_additional_profiles();
         $stmt = $conn->prepare('
             INSERT INTO orders (
                 order_number, sub_order_number, date, width, height, profile, glass, passepartout,
@@ -217,14 +220,29 @@ if ($uri === '/add_order' && $method === 'POST') {
             $_POST['price'] ?? null,
             isset($_POST['paid']) ? 1 : 0,
             isset($_POST['collected']) ? 1 : 0,
-            get_additional_profiles(),
+            $additionalProfiles,
             $_POST['frame_count'] ?? 1,
             $_POST['advance_payment'] ?? null,
             $_POST['discount'] ?? null,
             $_POST['description'] ?? '',
         ]);
+
+        deduct_stock_for_order($conn, [
+            'width' => $_POST['width'] ?? null,
+            'height' => $_POST['height'] ?? null,
+            'profile' => $_POST['profile'] ?? '',
+            'glass' => $_POST['glass'] ?? '',
+            'passepartout' => $_POST['passepartout'] ?? '',
+            'additional_profiles' => $additionalProfiles,
+            'frame_count' => $_POST['frame_count'] ?? 1,
+        ]);
+
+        $conn->commit();
         flash('Поръчката е добавена успешно!', 'success');
     } catch (Exception $e) {
+        if ($conn->inTransaction()) {
+            $conn->rollBack();
+        }
         flash('Грешка при добавяне на поръчката: ' . $e->getMessage(), 'error');
     }
     redirect('/interface');
@@ -235,6 +253,31 @@ if (preg_match('#^/edit_order/(\d+)$#', $uri, $m) && $method === 'POST') {
     $orderId = (int)$m[1];
     $conn = get_db_connection();
     try {
+        $stmt = $conn->prepare('SELECT * FROM orders WHERE id = ?');
+        $stmt->execute([$orderId]);
+        $existingOrder = $stmt->fetch();
+        if (!$existingOrder) {
+            flash('Поръчката не е намерена!', 'danger');
+            redirect('/interface');
+        }
+
+        $additionalProfiles = get_additional_profiles();
+        $newOrder = [
+            'width' => $_POST['width'] ?? null,
+            'height' => $_POST['height'] ?? null,
+            'profile' => $_POST['profile'] ?? '',
+            'glass' => $_POST['glass'] ?? '',
+            'passepartout' => $_POST['passepartout'] ?? '',
+            'additional_profiles' => $additionalProfiles,
+            'frame_count' => $_POST['frame_count'] ?? 1,
+        ];
+
+        $conn->beginTransaction();
+
+        if (!(bool)$existingOrder['collected']) {
+            adjust_stock_for_order_edit($conn, $existingOrder, $newOrder);
+        }
+
         $stmt = $conn->prepare('
             UPDATE orders SET
                 date = ?, width = ?, height = ?, profile = ?, glass = ?,
@@ -256,15 +299,20 @@ if (preg_match('#^/edit_order/(\d+)$#', $uri, $m) && $method === 'POST') {
             $_POST['price'] ?? null,
             isset($_POST['paid']) ? 1 : 0,
             isset($_POST['collected']) ? 1 : 0,
-            get_additional_profiles(),
+            $additionalProfiles,
             $_POST['frame_count'] ?? 1,
             $_POST['advance_payment'] ?? null,
             $_POST['discount'] ?? null,
             $_POST['description'] ?? '',
             $orderId,
         ]);
+
+        $conn->commit();
         flash('Поръчката е редактирана успешно!', 'success');
     } catch (Exception $e) {
+        if ($conn->inTransaction()) {
+            $conn->rollBack();
+        }
         flash('Грешка при редактиране на поръчката: ' . $e->getMessage(), 'error');
     }
     redirect('/interface');
@@ -272,12 +320,37 @@ if (preg_match('#^/edit_order/(\d+)$#', $uri, $m) && $method === 'POST') {
 
 if (preg_match('#^/delete_order/(\d+)$#', $uri, $m)) {
     require_login();
+    $orderId = (int)$m[1];
     $conn = get_db_connection();
     try {
-        $stmt = $conn->prepare('DELETE FROM orders WHERE id = ?');
-        $stmt->execute([(int)$m[1]]);
-        flash('Поръчката е изтрита успешно!', 'success');
+        $stmt = $conn->prepare('SELECT * FROM orders WHERE id = ?');
+        $stmt->execute([$orderId]);
+        $order = $stmt->fetch();
+        if (!$order) {
+            flash('Поръчката не е намерена!', 'danger');
+            redirect('/interface');
+        }
+
+        $restoreStock = isset($_GET['restore_stock']) && $_GET['restore_stock'] === '1';
+
+        if (!(bool)$order['collected'] && $restoreStock) {
+            $conn->beginTransaction();
+            restore_stock_for_order($conn, $order);
+            $stmt = $conn->prepare('DELETE FROM orders WHERE id = ?');
+            $stmt->execute([$orderId]);
+            $conn->commit();
+            flash('Поръчката е изтрита и материалите са върнати в наличност.', 'success');
+        } elseif ((bool)$order['collected']) {
+            $stmt = $conn->prepare('DELETE FROM orders WHERE id = ?');
+            $stmt->execute([$orderId]);
+            flash('Поръчката е изтрита успешно!', 'success');
+        } else {
+            flash('Изтриването е отменено. Материалите не са върнати в наличност.', 'warning');
+        }
     } catch (Exception $e) {
+        if ($conn->inTransaction()) {
+            $conn->rollBack();
+        }
         flash('Грешка при изтриване на поръчка: ' . $e->getMessage(), 'danger');
     }
     redirect('/interface');
@@ -308,6 +381,9 @@ if (preg_match('#^/add_sub_order/(\d+)$#', $uri, $m) && $method === 'POST') {
             $subOrderNumber = $lastSubOrder + 1;
         }
 
+        $conn->beginTransaction();
+
+        $additionalProfiles = get_additional_profiles();
         $stmt = $conn->prepare('
             INSERT INTO orders (
                 order_number, sub_order_number, date, width, height, profile, glass, passepartout,
@@ -330,14 +406,29 @@ if (preg_match('#^/add_sub_order/(\d+)$#', $uri, $m) && $method === 'POST') {
             $_POST['price'] ?? null,
             isset($_POST['paid']) ? 1 : 0,
             isset($_POST['collected']) ? 1 : 0,
-            get_additional_profiles(),
+            $additionalProfiles,
             $_POST['frame_count'] ?? 1,
             $_POST['advance_payment'] ?? null,
             $_POST['discount'] ?? null,
             $_POST['description'] ?? '',
         ]);
+
+        deduct_stock_for_order($conn, [
+            'width' => $_POST['width'] ?? null,
+            'height' => $_POST['height'] ?? null,
+            'profile' => $_POST['profile'] ?? '',
+            'glass' => $_POST['glass'] ?? '',
+            'passepartout' => $_POST['passepartout'] ?? '',
+            'additional_profiles' => $additionalProfiles,
+            'frame_count' => $_POST['frame_count'] ?? 1,
+        ]);
+
+        $conn->commit();
         flash('Подпоръчката е добавена успешно!', 'success');
     } catch (Exception $e) {
+        if ($conn->inTransaction()) {
+            $conn->rollBack();
+        }
         flash('Грешка при добавяне на подпоръчката: ' . $e->getMessage(), 'error');
     }
     redirect('/interface');
