@@ -1,17 +1,11 @@
-{% extends "base.html" %}
-
-{% block title %}Паспарту{% endblock %}
-
-{% block content %}
 <div class="container">
     <div class="d-flex justify-content-between align-items-center mb-4">
-        <h1>Паспарту</h1>
-        <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addPassepartoutModal">
-            <i class="fas fa-plus"></i> Добави паспарту
+        <h1>Стъкла</h1>
+        <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addGlassModal">
+            <i class="fas fa-plus"></i> Добави стъкло
         </button>
     </div>
 
-    <!-- Search -->
     <div class="row mb-4">
         <div class="col-md-6">
             <div class="search-container">
@@ -20,56 +14,54 @@
         </div>
     </div>
 
-    <!-- Passepartouts Table -->
     <div class="table-container">
         <div class="table-responsive">
             <table class="table table-hover">
                 <thead>
                     <tr>
-                        <th>№</th>
+                        <th>Име</th>
                         <th>Цена</th>
                         <th>Наличност</th>
                         <th>Действия</th>
                     </tr>
                 </thead>
                 <tbody>
-                    {% for passepartout in passepartouts %}
-                    <tr data-passepartout-id="{{ passepartout[0] }}">
-                        <td class="name">{{ passepartout[1] }}</td>
-                        <td class="price">{{ passepartout[2] }}</td>
+                    <?php foreach ($glasses as $glass): ?>
+                    <tr data-glass-id="<?= (int)$glass['id'] ?>">
+                        <td class="name"><?= e($glass['name']) ?></td>
+                        <td class="price"><?= e($glass['price']) ?></td>
                         <td>
-                            <span class="badge {% if passepartout[3] < 10 %}bg-danger{% else %}bg-success{% endif %}">
-                                {{ passepartout[3] }}
+                            <span class="badge <?= $glass['stock'] < 10 ? 'bg-danger' : 'bg-success' ?>">
+                                <?= (int)$glass['stock'] ?>
                             </span>
                         </td>
                         <td>
-                            <button class="btn btn-sm btn-outline-primary" onclick="editPassepartout('{{ passepartout[0] }}')" data-bs-toggle="tooltip" title="Редактирай">
+                            <button class="btn btn-sm btn-outline-primary" onclick="editGlass('<?= (int)$glass['id'] ?>')" data-bs-toggle="tooltip" title="Редактирай">
                                 <i class="fas fa-edit"></i>
                             </button>
-                            <button class="btn btn-sm btn-outline-danger" onclick="confirmDelete('{{ passepartout[0] }}')" data-bs-toggle="tooltip" title="Изтрий">
+                            <button class="btn btn-sm btn-outline-danger" onclick="confirmDelete('<?= (int)$glass['id'] ?>')" data-bs-toggle="tooltip" title="Изтрий">
                                 <i class="fas fa-trash"></i>
                             </button>
                         </td>
                     </tr>
-                    {% endfor %}
+                    <?php endforeach; ?>
                 </tbody>
             </table>
         </div>
     </div>
 </div>
 
-<!-- Add Passepartout Modal -->
-<div class="modal fade" id="addPassepartoutModal" tabindex="-1">
+<div class="modal fade" id="addGlassModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">Добави паспарту</h5>
+                <h5 class="modal-title">Добави стъкло</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
-            <form action="{{ url_for('add_passepartout') }}" method="POST">
+            <form action="<?= url_for('add_glass') ?>" method="POST">
                 <div class="modal-body">
                     <div class="form-group">
-                        <label for="name" class="form-label">№</label>
+                        <label for="name" class="form-label">Име</label>
                         <input type="text" class="form-control" id="name" name="name" required>
                     </div>
                     <div class="form-group">
@@ -90,18 +82,17 @@
     </div>
 </div>
 
-<!-- Edit Passepartout Modal -->
-<div class="modal fade" id="editPassepartoutModal" tabindex="-1">
+<div class="modal fade" id="editGlassModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">Редактирай паспарту</h5>
+                <h5 class="modal-title">Редактирай стъкло</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
-            <form id="editPassepartoutForm" method="POST">
+            <form id="editGlassForm" method="POST">
                 <div class="modal-body">
                     <div class="form-group">
-                        <label for="edit_name" class="form-label">№</label>
+                        <label for="edit_name" class="form-label">Име</label>
                         <input type="text" class="form-control" id="edit_name" name="name" required>
                     </div>
                     <div class="form-group">
@@ -121,8 +112,3 @@
         </div>
     </div>
 </div>
-{% endblock %}
-
-{% block scripts %}
-<script src="{{ url_for('static', filename='js/passepartouts.js') }}"></script>
-{% endblock %}

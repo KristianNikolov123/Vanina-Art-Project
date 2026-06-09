@@ -1,108 +1,3 @@
-{% extends "base.html" %}
-
-{% block title %}Поръчки{% endblock %}
-
-{% block head %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/interface.css') }}">
-{% endblock %}
-
-{% block content %}
-<div class="container-fluid">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h1>Поръчки</h1>
-        <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addOrderModal">
-            <i class="fas fa-plus"></i> Нова поръчка
-        </button>
-    </div>
-
-    <!-- Search and Filter -->
-    <div class="row mb-4">
-        <div class="col-md-6">
-            <div class="input-group">
-                <input type="text" id="searchInput" class="form-control" placeholder="Търсене...">
-                <button class="btn btn-outline-secondary" type="button">
-                    <i class="fas fa-search"></i>
-                </button>
-            </div>
-        </div>
-        <div class="col-md-6">
-            <div class="btn-group" role="group">
-                <button type="button" class="btn btn-outline-primary active" data-filter="all">Всички</button>
-                <button type="button" class="btn btn-outline-success" data-filter="paid">Платени</button>
-                <button type="button" class="btn btn-outline-danger" data-filter="unpaid">Неплатени</button>
-                <button type="button" class="btn btn-outline-info" data-filter="collected">Получени</button>
-                <button type="button" class="btn btn-outline-warning" data-filter="uncollected">Неполучени</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Orders Table Container -->
-    <div class="orders-container">
-        <div class="table-container">
-            <div class="table-responsive" style="position: relative;">
-                <table class="table table-striped table-hover">
-                    <thead class="table-dark">
-                        <tr>
-                            <th>№</th>
-                            <th>Дата</th>
-                            <th>Размер</th>
-                            <th>Профил</th>
-                            <th>Доп. профил</th>
-                            <th>Брой рамки</th>
-                            <th>Описание</th>
-                            <th>Стъкло</th>
-                            <th>Гръб</th>
-                            <th>Паспарту</th>
-                            <th>Окачване</th>
-                            <th>Цена</th>
-                            <th>Аванс</th>
-                            <th>Отстъпка</th>
-                            <th>Клиент</th>
-                            <th>Статус</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for order in orders %}
-                        <tr class="order-row" data-order-id="{{ order[0] }}">
-                            <td>{{ order[1] }}{% if order[2] > 0 %}.{{ order[2] }}{% endif %}</td>
-                            <td class="date">{{ order[3]|format_date_ddmmyyyy }}</td>
-                            <td><span class="width">{{ order[4] }}</span>x<span class="height">{{ order[5] }}</span> cm</td>
-                            <td class="profile">{{ order[6] }}</td>
-                            <td class="additional-profiles">{{ order[7] }}</td>
-                            <td class="frame-count">{{ order[8] }}</td>
-                            <td class="description">
-                                <div class="description-preview" style="cursor: pointer; font-size: 0.9em;"
-                                data-description="{{ order[9]|replace("'", "\\'")|replace("\n", "\\n")|replace("\r", "\\r")|safe }}"
-                                onclick="showFullDescription(this.dataset.description)">
-                                {% set desc = order[9]|default('', true)|trim %}
-                                {% if desc %}
-                                    {{ desc[:5] }}{% if desc|length > 5 %}...{% endif %}
-                                {% endif %}
-                           </div>
-                            </td>
-                            <td class="glass">{{ order[10]|short_glass }}</td>
-                            <td class="back">{{ order[11]|short_back }}</td>
-                            <td class="passepartout">{{ order[12] }}</td>
-                            <td class="hanging">{{ order[13]|short_hanging }}</td>
-                            <td class="price">{{ order[14] }}</td>
-                            <td class="advance-payment">{{ order[15] }}</td>
-                            <td class="discount">{{ order[16] }}</td>
-                            <td class="customer-name">{{ order[17] }}</td>
-                            <td>
-                                <span class="badge {% if order[18] %}bg-success{% else %}bg-danger{% endif %}">{{ 'Платена' if order[18] else 'Неплатена' }}</span>
-                                <span class="badge {% if order[19] %}bg-info{% else %}bg-warning{% endif %}">{{ 'Получена' if order[19] else 'Неполучена' }}</span>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-                <div class="row-float-actions"></div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Add Order Modal -->
 <div class="modal fade" id="addOrderModal" tabindex="-1">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
@@ -111,7 +6,7 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <form id="addOrderForm" action="{{ url_for('add_order') }}" method="post">
+                <form id="addOrderForm" action="<?= url_for('add_order') ?>" method="post">
                     <div class="row">
                         <div class="col-md-6 mb-3">
                             <label class="form-label">Дата на получаване</label>
@@ -126,7 +21,6 @@
                             <input type="number" class="form-control" name="height" step="0.1">
                         </div>
                     </div>
-
                     <div class="row">
                         <div class="col-md-6 mb-3">
                             <label class="form-label">Профил</label>
@@ -143,7 +37,6 @@
                             <input type="number" class="form-control" name="frame_count" value="1" min="1">
                         </div>
                     </div>
-
                     <div class="row">
                         <div class="col-md-6 mb-3">
                             <label class="form-label">Стъкло</label>
@@ -162,7 +55,6 @@
                             <input type="text" class="form-control" name="passepartout">
                         </div>
                     </div>
-
                     <div class="row">
                         <div class="col-md-6 mb-3">
                             <label class="form-label">Гръб</label>
@@ -183,7 +75,6 @@
                             </select>
                         </div>
                     </div>
-
                     <div class="row">
                         <div class="col-md-6 mb-3">
                             <label class="form-label">Име на клиент</label>
@@ -194,7 +85,6 @@
                             <textarea class="form-control" name="description" rows="2"></textarea>
                         </div>
                     </div>
-
                     <div class="row">
                         <div class="col-md-4 mb-3">
                             <label class="form-label">Цена</label>
@@ -209,7 +99,6 @@
                             <input type="number" class="form-control" name="discount" step="0.01">
                         </div>
                     </div>
-
                     <div class="row">
                         <div class="col-md-6 mb-3">
                             <div class="form-check">
@@ -234,7 +123,6 @@
     </div>
 </div>
 
-<!-- Edit Order Modal -->
 <div class="modal fade" id="editOrderModal" tabindex="-1">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
@@ -258,7 +146,6 @@
                             <input type="number" class="form-control" name="height" step="0.1">
                         </div>
                     </div>
-
                     <div class="row">
                         <div class="col-md-6 mb-3">
                             <label class="form-label">Профил</label>
@@ -275,7 +162,6 @@
                             <input type="number" class="form-control" name="frame_count" min="1">
                         </div>
                     </div>
-
                     <div class="row">
                         <div class="col-md-6 mb-3">
                             <label class="form-label">Стъкло</label>
@@ -294,7 +180,6 @@
                             <input type="text" class="form-control" name="passepartout">
                         </div>
                     </div>
-
                     <div class="row">
                         <div class="col-md-6 mb-3">
                             <label class="form-label">Гръб</label>
@@ -315,7 +200,6 @@
                             </select>
                         </div>
                     </div>
-
                     <div class="row">
                         <div class="col-md-6 mb-3">
                             <label class="form-label">Име на клиент</label>
@@ -327,7 +211,6 @@
                             <div class="form-text" id="previousDescription" style="color: #888; font-size: 0.95em;"></div>
                         </div>
                     </div>
-
                     <div class="row">
                         <div class="col-md-4 mb-3">
                             <label class="form-label">Цена</label>
@@ -342,7 +225,6 @@
                             <input type="number" class="form-control" name="discount" step="0.01">
                         </div>
                     </div>
-
                     <div class="row">
                         <div class="col-md-6 mb-3">
                             <div class="form-check">
@@ -367,7 +249,6 @@
     </div>
 </div>
 
-<!-- Add Sub-Order Modal -->
 <div class="modal fade" id="addSubOrderModal" tabindex="-1">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
@@ -391,7 +272,6 @@
                             <input type="number" class="form-control" name="height" step="0.1">
                         </div>
                     </div>
-
                     <div class="row">
                         <div class="col-md-6 mb-3">
                             <label class="form-label">Профил</label>
@@ -408,7 +288,6 @@
                             <input type="number" class="form-control" name="frame_count" value="1" min="1">
                         </div>
                     </div>
-
                     <div class="row">
                         <div class="col-md-6 mb-3">
                             <label class="form-label">Стъкло</label>
@@ -427,7 +306,6 @@
                             <input type="text" class="form-control" name="passepartout">
                         </div>
                     </div>
-
                     <div class="row">
                         <div class="col-md-6 mb-3">
                             <label class="form-label">Гръб</label>
@@ -448,7 +326,6 @@
                             </select>
                         </div>
                     </div>
-
                     <div class="row">
                         <div class="col-md-6 mb-3">
                             <label class="form-label">Описание</label>
@@ -459,7 +336,6 @@
                             <input type="number" class="form-control" name="price" step="0.01">
                         </div>
                     </div>
-
                     <div class="row">
                         <div class="col-md-4 mb-3">
                             <label class="form-label">Аванс</label>
@@ -490,7 +366,6 @@
     </div>
 </div>
 
-<!-- Add Description Modal -->
 <div class="modal fade" id="descriptionModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
@@ -507,8 +382,3 @@
         </div>
     </div>
 </div>
-{% endblock %}
-
-{% block scripts %}
-<script src="{{ url_for('static', filename='js/interface.js') }}"></script>
-{% endblock %}

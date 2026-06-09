@@ -1,11 +1,6 @@
-{% extends "base.html" %}
-
-{% block title %}Архив{% endblock %}
-
-{% block content %}
 <div class="container">
     <h1 class="mb-4">Архив на влизанията</h1>
-    
+
     <div class="table-responsive">
         <table class="table table-striped">
             <thead>
@@ -16,15 +11,14 @@
                 </tr>
             </thead>
             <tbody>
-                {% for log in logs %}
+                <?php foreach ($logs as $log): ?>
                 <tr>
-                    <td>{{ log.username }}</td>
-                    <td>{{ log.email }}</td>
-                    <td>{{ log.login_time }}</td>
+                    <td><?= e($log['username']) ?></td>
+                    <td><?= e($log['email']) ?></td>
+                    <td><?= e($log['login_time']) ?></td>
                 </tr>
-                {% endfor %}
+                <?php endforeach; ?>
             </tbody>
         </table>
     </div>
 </div>
-{% endblock %} 

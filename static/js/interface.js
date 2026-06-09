@@ -15,7 +15,7 @@ function addProfileField(containerId = 'additionalProfiles') {
 // Function to add a sub-order
 function addSubOrder(orderId) {
     const form = document.getElementById('addSubOrderForm');
-    form.action = `/add_sub_order/${orderId}`;
+    form.action = `${window.BASE_PATH}/add_sub_order/${orderId}`;
     
     // Show the modal
     const modal = new bootstrap.Modal(document.getElementById('addSubOrderModal'));
@@ -122,7 +122,7 @@ function editOrder(orderId) {
     form.querySelector('[name="description"]').value = description;
 
     // Update form action
-    form.action = `/edit_order/${orderId}`;
+    form.action = `${window.BASE_PATH}/edit_order/${orderId}`;
 
     // Show the modal
     const modal = new bootstrap.Modal(document.getElementById('editOrderModal'));
@@ -132,7 +132,7 @@ function editOrder(orderId) {
 // Function to confirm order deletion
 function confirmDelete(orderId) {
     if (confirm('Сигурни ли сте, че искате да изтриете тази поръчка?')) {
-        window.location.href = `/delete_order/${orderId}`;
+        window.location.href = `${window.BASE_PATH}/delete_order/${orderId}`;
     }
 }
 

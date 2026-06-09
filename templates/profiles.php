@@ -1,8 +1,3 @@
-{% extends "base.html" %}
-
-{% block title %}Профили{% endblock %}
-
-{% block content %}
 <div class="container-fluid">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h1>Профили</h1>
@@ -11,7 +6,6 @@
         </button>
     </div>
 
-    <!-- Search -->
     <div class="row mb-4">
         <div class="col-md-6">
             <div class="input-group">
@@ -23,7 +17,6 @@
         </div>
     </div>
 
-    <!-- Profiles Table -->
     <div class="table-responsive">
         <table class="table table-striped table-hover">
             <thead class="table-dark">
@@ -35,31 +28,30 @@
                 </tr>
             </thead>
             <tbody>
-                {% for profile in profiles %}
-                <tr data-profile-id="{{ profile[0] }}">
-                    <td class="name">{{ profile[1] }}</td>
-                    <td class="price">{{ profile[2] }}</td>
+                <?php foreach ($profiles as $profile): ?>
+                <tr data-profile-id="<?= (int)$profile['id'] ?>">
+                    <td class="name"><?= e($profile['name']) ?></td>
+                    <td class="price"><?= e($profile['price']) ?></td>
                     <td>
-                        <span class="badge {% if profile[3] > 0 %}bg-success{% else %}bg-danger{% endif %}">
-                            {{ profile[3] }}
+                        <span class="badge <?= $profile['stock'] > 0 ? 'bg-success' : 'bg-danger' ?>">
+                            <?= (int)$profile['stock'] ?>
                         </span>
                     </td>
                     <td>
-                        <button class="btn btn-sm btn-primary" onclick="editProfile('{{ profile[0] }}')">
+                        <button class="btn btn-sm btn-primary" onclick="editProfile('<?= (int)$profile['id'] ?>')">
                             <i class="fas fa-edit"></i>
                         </button>
-                        <button class="btn btn-sm btn-danger" onclick="confirmDelete('{{ profile[0] }}')">
+                        <button class="btn btn-sm btn-danger" onclick="confirmDelete('<?= (int)$profile['id'] ?>')">
                             <i class="fas fa-trash"></i>
                         </button>
                     </td>
                 </tr>
-                {% endfor %}
+                <?php endforeach; ?>
             </tbody>
         </table>
     </div>
 </div>
 
-<!-- Add Profile Modal -->
 <div class="modal fade" id="addProfileModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
@@ -68,7 +60,7 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <form id="addProfileForm" action="{{ url_for('add_profile') }}" method="post">
+                <form id="addProfileForm" action="<?= url_for('add_profile') ?>" method="post">
                     <div class="mb-3">
                         <label class="form-label">Име</label>
                         <input type="text" class="form-control" name="name" required>
@@ -91,7 +83,6 @@
     </div>
 </div>
 
-<!-- Edit Profile Modal -->
 <div class="modal fade" id="editProfileModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
@@ -122,8 +113,3 @@
         </div>
     </div>
 </div>
-{% endblock %}
-
-{% block scripts %}
-<script src="{{ url_for('static', filename='js/profiles.js') }}"></script>
-{% endblock %}
