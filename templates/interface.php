@@ -28,7 +28,9 @@
 
     <script>
         window.PASSEPARTOUT_MAP = <?= json_encode(array_column($passepartouts, 'id', 'name'), JSON_UNESCAPED_UNICODE) ?>;
+        window.SERVICES_MAP = <?= json_encode(array_column($services ?? [], 'name', 'id'), JSON_UNESCAPED_UNICODE) ?>;
     </script>
+    <?php $servicesById = array_column($services ?? [], 'name', 'id'); ?>
 
     <div class="orders-container">
         <div class="table-container">
@@ -60,6 +62,8 @@
                             $desc = trim($order['description'] ?? '');
                             $descAttr = htmlspecialchars(str_replace(["\r", "\n"], ['\\r', '\\n'], $desc), ENT_QUOTES, 'UTF-8');
                             $orderData = htmlspecialchars(json_encode([
+                                'order_number' => (int)$order['order_number'],
+                                'sub_order_number' => (int)$order['sub_order_number'],
                                 'date' => $order['date'] ?? '',
                                 'width' => $order['width'],
                                 'height' => $order['height'],
@@ -79,9 +83,26 @@
                                 'description' => $order['description'] ?? '',
                                 'paid' => (bool)$order['paid'],
                                 'collected' => (bool)$order['collected'],
+                                'passepartout_openings' => $order['passepartout_openings'] ?? 1,
+                                'urgent' => (bool)($order['urgent'] ?? false),
+                                'student_discount' => (bool)($order['student_discount'] ?? false),
+                                'complex_passepartout' => (bool)($order['complex_passepartout'] ?? false),
+                                'extra_services' => $order['extra_services'] ?? '[]',
+                                'transport_km' => $order['transport_km'] ?? '',
+                                'frame_box' => (bool)($order['frame_box'] ?? false),
+                                'frame_nonstandard' => (bool)($order['frame_nonstandard'] ?? false),
+                                'frame_shape' => $order['frame_shape'] ?? '',
+                                'frame_high_complexity' => (bool)($order['frame_high_complexity'] ?? false),
+                                'client_passepartout_cutting' => (bool)($order['client_passepartout_cutting'] ?? false),
                             ], JSON_UNESCAPED_UNICODE), ENT_QUOTES, 'UTF-8');
+                            $hasExtras = order_has_extras($order);
+                            $extrasLabels = $hasExtras ? format_order_extras_labels($order, $servicesById) : [];
+                            $extrasTitle = $hasExtras ? 'Допълнителни опции: ' . implode(', ', $extrasLabels) : '';
                         ?>
-                        <tr class="order-row" data-order-id="<?= (int)$order['id'] ?>" data-order="<?= $orderData ?>">
+                        <tr class="order-row<?= $hasExtras ? ' order-row--extras' : '' ?>"
+                            data-order-id="<?= (int)$order['id'] ?>"
+                            data-order="<?= $orderData ?>"
+                            <?= $extrasTitle !== '' ? 'title="' . e($extrasTitle) . '"' : '' ?>>
                             <td><?= (int)$order['order_number'] ?><?= $order['sub_order_number'] > 0 ? '.' . (int)$order['sub_order_number'] : '' ?></td>
                             <td class="date"><?= format_date_ddmmyyyy($order['date']) ?></td>
                             <td><span class="width"><?= e($order['width']) ?></span>x<span class="height"><?= e($order['height']) ?></span> cm</td>
@@ -91,7 +112,7 @@
                             <td class="description">
                                 <div class="description-preview" style="cursor: pointer; font-size: 0.9em;"
                                 data-description="<?= $descAttr ?>"
-                                onclick="showFullDescription(this.dataset.description)">
+                                onclick="event.stopPropagation(); showFullDescription(this.dataset.description)">
                                 <?php if ($desc): ?>
                                     <?= e(mb_substr($desc, 0, 5)) ?><?= mb_strlen($desc) > 5 ? '...' : '' ?>
                                 <?php endif; ?>

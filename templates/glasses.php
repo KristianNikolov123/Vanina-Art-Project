@@ -1,4 +1,6 @@
-<div class="container">
+<?php include __DIR__ . '/partials/warehouse_nav.php'; ?>
+
+<div class="container px-0">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h1>Стъкла</h1>
         <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addGlassModal">
@@ -20,7 +22,8 @@
                 <thead>
                     <tr>
                         <th>Име</th>
-                        <th>Цена(€/кв.м.)</th>
+                        <th>Цена (€/кв.м.)</th>
+                        <th>Мин. (€/бр.)</th>
                         <th>Наличност (кв.м.)</th>
                         <th>Действия</th>
                     </tr>
@@ -30,6 +33,7 @@
                     <tr data-glass-id="<?= (int)$glass['id'] ?>">
                         <td class="name"><?= e($glass['name']) ?></td>
                         <td class="price"><?= e($glass['price']) ?></td>
+                        <td class="min-price"><?= e($glass['min_price'] ?? 0) ?></td>
                         <td>
                             <span class="badge <?= $glass['stock'] < 10 ? 'bg-danger' : 'bg-success' ?>">
                                 <?= (int)$glass['stock'] ?>
@@ -65,8 +69,12 @@
                         <input type="text" class="form-control" id="name" name="name" required>
                     </div>
                     <div class="form-group">
-                        <label for="price" class="form-label">Цена(€/кв.м.)</label>
+                        <label for="price" class="form-label">Цена (€/кв.м.)</label>
                         <input type="number" class="form-control" id="price" name="price" step="0.01" min="0" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="min_price" class="form-label">Мин. цена (€/бр.)</label>
+                        <input type="number" class="form-control" id="min_price" name="min_price" step="0.01" min="0" value="0">
                     </div>
                     <div class="form-group">
                         <label for="stock" class="form-label">Наличност (кв.м.)</label>
@@ -96,8 +104,12 @@
                         <input type="text" class="form-control" id="edit_name" name="name" required>
                     </div>
                     <div class="form-group">
-                        <label for="edit_price" class="form-label">Цена(€/кв.м.)</label>
+                        <label for="edit_price" class="form-label">Цена (€/кв.м.)</label>
                         <input type="number" class="form-control" id="edit_price" name="price" step="0.01" min="0" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="edit_min_price" class="form-label">Мин. цена (€/бр.)</label>
+                        <input type="number" class="form-control" id="edit_min_price" name="min_price" step="0.01" min="0">
                     </div>
                     <div class="form-group">
                         <label for="edit_stock" class="form-label">Наличност (кв.м.)</label>

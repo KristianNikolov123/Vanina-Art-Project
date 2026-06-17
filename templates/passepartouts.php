@@ -1,4 +1,6 @@
-<div class="container">
+<?php include __DIR__ . '/partials/warehouse_nav.php'; ?>
+
+<div class="container px-0">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h1>Паспарту</h1>
         <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addPassepartoutModal">
@@ -21,23 +23,29 @@
                     <tr>
                         <th>№</th>
                         <th>Цена (€/кв.м.)</th>
-                        <th>Листове</th>
-                        <th>Наличност (бр.)</th>
+                        <?php foreach ($sheet_types as $sheetType): ?>
+                        <th>Наличност <?= e($sheetType['name']) ?> (бр.)</th>
+                        <?php endforeach; ?>
                         <th>Действия</th>
                     </tr>
                 </thead>
                 <tbody>
                     <?php foreach ($passepartouts as $passepartout): ?>
                     <tr data-passepartout-id="<?= (int)$passepartout['id'] ?>"
-                        data-sheet-types="<?= e(json_encode($passepartout['sheet_type_ids'] ?? [])) ?>">
+                        data-sheet-stocks="<?= e(json_encode($passepartout['sheet_stocks'] ?? [])) ?>">
                         <td class="name"><?= e($passepartout['name']) ?></td>
                         <td class="price"><?= e($passepartout['price']) ?></td>
-                        <td class="sheet-types"><?= e($passepartout['sheet_types'] ?? '') ?></td>
+                        <?php foreach ($sheet_types as $sheetType): ?>
+                        <?php
+                            $stock = $passepartout['sheet_stocks'][(int)$sheetType['id']] ?? 0;
+                            $stockClass = $stock < 10 ? 'bg-danger' : 'bg-success';
+                        ?>
                         <td>
-                            <span class="badge <?= $passepartout['stock'] < 10 ? 'bg-danger' : 'bg-success' ?>">
-                                <?= (int)$passepartout['stock'] ?>
+                            <span class="badge <?= $stockClass ?> stock-sheet-<?= (int)$sheetType['id'] ?>">
+                                <?= rtrim(rtrim(number_format((float)$stock, 2, '.', ''), '0'), '.') ?>
                             </span>
                         </td>
+                        <?php endforeach; ?>
                         <td>
                             <button class="btn btn-sm btn-outline-primary" onclick="editPassepartout('<?= (int)$passepartout['id'] ?>')" data-bs-toggle="tooltip" title="Редактирай">
                                 <i class="fas fa-edit"></i>
@@ -72,17 +80,11 @@
                         <input type="number" class="form-control" id="price" name="price" step="0.01" min="0" required>
                     </div>
                     <div class="form-group mb-3">
-                        <label for="stock" class="form-label">Наличност (брой листа)</label>
-                        <input type="number" class="form-control" id="stock" name="stock" min="0" required>
-                    </div>
-                    <div class="form-group mb-3">
-                        <label class="form-label">Налично от листове</label>
+                        <label class="form-label">Наличност по листове</label>
                         <?php foreach ($sheet_types as $sheetType): ?>
-                        <div class="form-check">
-                            <input class="form-check-input" type="checkbox" name="sheet_types[]" value="<?= (int)$sheetType['id'] ?>" id="add_sheet_<?= (int)$sheetType['id'] ?>">
-                            <label class="form-check-label" for="add_sheet_<?= (int)$sheetType['id'] ?>">
-                                <?= e($sheetType['name']) ?> cm
-                            </label>
+                        <div class="mb-2">
+                            <label class="form-label small text-muted"><?= e($sheetType['name']) ?> (бр.)</label>
+                            <input type="number" class="form-control" name="sheet_stock[<?= (int)$sheetType['id'] ?>]" min="0" step="0.01" value="0">
                         </div>
                         <?php endforeach; ?>
                     </div>
@@ -114,17 +116,11 @@
                         <input type="number" class="form-control" id="edit_price" name="price" step="0.01" min="0" required>
                     </div>
                     <div class="form-group mb-3">
-                        <label for="edit_stock" class="form-label">Наличност (брой листа)</label>
-                        <input type="number" class="form-control" id="edit_stock" name="stock" min="0" required>
-                    </div>
-                    <div class="form-group mb-3">
-                        <label class="form-label">Налично от листове</label>
+                        <label class="form-label">Наличност по листове</label>
                         <?php foreach ($sheet_types as $sheetType): ?>
-                        <div class="form-check">
-                            <input class="form-check-input edit-sheet-type" type="checkbox" name="sheet_types[]" value="<?= (int)$sheetType['id'] ?>" id="edit_sheet_<?= (int)$sheetType['id'] ?>">
-                            <label class="form-check-label" for="edit_sheet_<?= (int)$sheetType['id'] ?>">
-                                <?= e($sheetType['name']) ?> cm
-                            </label>
+                        <div class="mb-2">
+                            <label class="form-label small text-muted"><?= e($sheetType['name']) ?> (бр.)</label>
+                            <input type="number" class="form-control edit-sheet-stock" data-sheet-id="<?= (int)$sheetType['id'] ?>" name="sheet_stock[<?= (int)$sheetType['id'] ?>]" min="0" step="0.01" value="0">
                         </div>
                         <?php endforeach; ?>
                     </div>

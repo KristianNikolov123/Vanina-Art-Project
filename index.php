@@ -128,6 +128,9 @@ if ($uri === '/interface') {
     $profiles = $conn->query('SELECT id, name, price FROM profiles ORDER BY name')->fetchAll();
     $glasses = $conn->query('SELECT id, name, price FROM glasses ORDER BY name')->fetchAll();
     $passepartouts = $conn->query('SELECT id, name, price FROM passepartouts ORDER BY name')->fetchAll();
+    $backs = $conn->query('SELECT id, name FROM backs ORDER BY name')->fetchAll();
+    $hanging_options = $conn->query('SELECT id, name FROM hanging_options ORDER BY name')->fetchAll();
+    $services = get_all_services($conn);
     render('interface.php', [
         'title' => 'Поръчки',
         'current_page' => 'interface',
@@ -135,6 +138,9 @@ if ($uri === '/interface') {
         'profiles' => $profiles,
         'glasses' => $glasses,
         'passepartouts' => $passepartouts,
+        'backs' => $backs,
+        'hanging_options' => $hanging_options,
+        'services' => $services,
         'extra_css' => 'interface.css',
         'extra_js' => 'interface.js',
     ]);
@@ -146,6 +152,12 @@ if ($uri === '/calculate_price' && $method === 'POST') {
     header('Content-Type: application/json');
     $order = build_order_from_post();
     echo json_encode(calculate_order_pricing(get_db_connection(), $order));
+    exit;
+}
+
+if ($uri === '/warehouse') {
+    require_login();
+    render('warehouse.php', ['title' => 'Склад', 'current_page' => 'warehouse']);
     exit;
 }
 
@@ -165,22 +177,50 @@ if ($uri === '/glasses') {
     exit;
 }
 
+if ($uri === '/backs') {
+    require_login();
+    $conn = get_db_connection();
+    $backs = $conn->query('SELECT * FROM backs ORDER BY name')->fetchAll();
+    render('backs.php', ['title' => 'Гръбове', 'current_page' => 'backs', 'backs' => $backs, 'extra_js' => 'backs.js']);
+    exit;
+}
+
+if ($uri === '/hanging') {
+    require_login();
+    $conn = get_db_connection();
+    $hanging_options = $conn->query('SELECT * FROM hanging_options ORDER BY name')->fetchAll();
+    $hangerPoolStock = get_hanger_pool_stock($conn);
+    foreach ($hanging_options as &$hangingRow) {
+        $hangingRow['display_stock'] = hanging_shares_hanger_pool($hangingRow['name'] ?? '')
+            ? $hangerPoolStock
+            : (float)($hangingRow['stock'] ?? 0);
+    }
+    unset($hangingRow);
+    render('hanging.php', ['title' => 'Окачване', 'current_page' => 'hanging', 'hanging_options' => $hanging_options, 'extra_js' => 'hanging.js']);
+    exit;
+}
+
+if ($uri === '/services') {
+    require_login();
+    $conn = get_db_connection();
+    $pricing_settings = get_all_pricing_settings($conn);
+    $services = get_all_services($conn);
+    render('services.php', [
+        'title' => 'Услуги',
+        'current_page' => 'services',
+        'pricing_settings' => $pricing_settings,
+        'services' => $services,
+    ]);
+    exit;
+}
+
 if ($uri === '/passepartouts') {
     require_login();
     $conn = get_db_connection();
     $passepartouts = $conn->query('SELECT * FROM passepartouts ORDER BY name')->fetchAll();
     foreach ($passepartouts as &$passepartoutRow) {
-        $passepartoutRow['sheet_type_ids'] = get_passepartout_sheet_type_ids($conn, (int)$passepartoutRow['id']);
-        $names = [];
-        foreach ($passepartoutRow['sheet_type_ids'] as $sheetTypeId) {
-            $stmt = $conn->prepare('SELECT name FROM passepartout_sheet_types WHERE id = ?');
-            $stmt->execute([$sheetTypeId]);
-            $name = $stmt->fetchColumn();
-            if ($name) {
-                $names[] = $name;
-            }
-        }
-        $passepartoutRow['sheet_types'] = implode(', ', $names);
+        $passepartoutId = (int)$passepartoutRow['id'];
+        $passepartoutRow['sheet_stocks'] = get_passepartout_sheet_stocks($conn, $passepartoutId);
     }
     unset($passepartoutRow);
     $sheetTypes = get_all_sheet_types($conn);
@@ -240,37 +280,7 @@ if ($uri === '/add_order' && $method === 'POST') {
         $lastOrder = $conn->query('SELECT MAX(order_number) FROM orders')->fetchColumn();
         $orderNumber = ($lastOrder ?: 0) + 1;
         $order = prepare_order_persistence($conn, $_POST);
-
-        $stmt = $conn->prepare('
-            INSERT INTO orders (
-                order_number, sub_order_number, date, width, height, profile, glass, passepartout,
-                passepartout_bill_width, passepartout_bill_height,
-                back, hanging, customer_name, price, paid, collected,
-                additional_profiles, frame_count, advance_payment, discount, description
-            ) VALUES (?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ');
-        $stmt->execute([
-            $orderNumber,
-            $order['date'],
-            $order['width'],
-            $order['height'],
-            $order['profile'],
-            $order['glass'],
-            $order['passepartout'],
-            $order['passepartout_bill_width'],
-            $order['passepartout_bill_height'],
-            $order['back'],
-            $order['hanging'],
-            $order['customer_name'],
-            $order['price'],
-            $order['paid'],
-            $order['collected'],
-            $order['additional_profiles'],
-            $order['frame_count'],
-            $order['advance_payment'],
-            $order['discount'],
-            $order['description'],
-        ]);
+        insert_order_row($conn, $order, $orderNumber, 0);
 
         deduct_stock_for_order($conn, $order['stock_order']);
 
@@ -306,37 +316,7 @@ if (preg_match('#^/edit_order/(\d+)$#', $uri, $m) && $method === 'POST') {
             adjust_stock_for_order_edit($conn, $existingOrder, $order['stock_order']);
         }
 
-        $stmt = $conn->prepare('
-            UPDATE orders SET
-                date = ?, width = ?, height = ?, profile = ?, glass = ?,
-                passepartout = ?, passepartout_bill_width = ?, passepartout_bill_height = ?,
-                back = ?, hanging = ?, customer_name = ?,
-                price = ?, paid = ?, collected = ?, additional_profiles = ?,
-                frame_count = ?, advance_payment = ?, discount = ?, description = ?
-            WHERE id = ?
-        ');
-        $stmt->execute([
-            $order['date'],
-            $order['width'],
-            $order['height'],
-            $order['profile'],
-            $order['glass'],
-            $order['passepartout'],
-            $order['passepartout_bill_width'],
-            $order['passepartout_bill_height'],
-            $order['back'],
-            $order['hanging'],
-            $order['customer_name'],
-            $order['price'],
-            $order['paid'],
-            $order['collected'],
-            $order['additional_profiles'],
-            $order['frame_count'],
-            $order['advance_payment'],
-            $order['discount'],
-            $order['description'],
-            $orderId,
-        ]);
+        update_order_row($conn, $order, $orderId);
 
         $conn->commit();
         flash('Поръчката е редактирана успешно!', 'success');
@@ -415,37 +395,7 @@ if (preg_match('#^/add_sub_order/(\d+)$#', $uri, $m) && $method === 'POST') {
         $conn->beginTransaction();
 
         $order = prepare_order_persistence($conn, $_POST, $mainOrder['customer_name']);
-        $stmt = $conn->prepare('
-            INSERT INTO orders (
-                order_number, sub_order_number, date, width, height, profile, glass, passepartout,
-                passepartout_bill_width, passepartout_bill_height,
-                back, hanging, customer_name, price, paid, collected,
-                additional_profiles, frame_count, advance_payment, discount, description
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ');
-        $stmt->execute([
-            $mainOrder['order_number'],
-            $subOrderNumber,
-            $order['date'],
-            $order['width'],
-            $order['height'],
-            $order['profile'],
-            $order['glass'],
-            $order['passepartout'],
-            $order['passepartout_bill_width'],
-            $order['passepartout_bill_height'],
-            $order['back'],
-            $order['hanging'],
-            $order['customer_name'],
-            $order['price'],
-            $order['paid'],
-            $order['collected'],
-            $order['additional_profiles'],
-            $order['frame_count'],
-            $order['advance_payment'],
-            $order['discount'],
-            $order['description'],
-        ]);
+        insert_order_row($conn, $order, (int)$mainOrder['order_number'], $subOrderNumber);
 
         deduct_stock_for_order($conn, $order['stock_order']);
 
@@ -466,8 +416,10 @@ if ($uri === '/add_profile' && $method === 'POST') {
     require_login();
     $conn = get_db_connection();
     try {
-        $stmt = $conn->prepare('INSERT INTO profiles (name, price, stock) VALUES (?, ?, ?)');
-        $stmt->execute([$_POST['name'], $_POST['price'], $_POST['stock']]);
+        $widthCm = isset($_POST['width_cm']) && $_POST['width_cm'] !== '' ? $_POST['width_cm'] : null;
+        $profileType = $_POST['profile_type'] ?? 'wood';
+        $stmt = $conn->prepare('INSERT INTO profiles (name, price, stock, width_cm, profile_type) VALUES (?, ?, ?, ?, ?)');
+        $stmt->execute([$_POST['name'], $_POST['price'], $_POST['stock'], $widthCm, $profileType]);
         flash('Профилът е добавен успешно!', 'success');
     } catch (Exception $e) {
         flash('Грешка при добавяне на профил: ' . $e->getMessage(), 'danger');
@@ -479,8 +431,10 @@ if (preg_match('#^/edit_profile/(\d+)$#', $uri, $m) && $method === 'POST') {
     require_login();
     $conn = get_db_connection();
     try {
-        $stmt = $conn->prepare('UPDATE profiles SET name = ?, price = ?, stock = ? WHERE id = ?');
-        $stmt->execute([$_POST['name'], $_POST['price'], $_POST['stock'], (int)$m[1]]);
+        $widthCm = isset($_POST['width_cm']) && $_POST['width_cm'] !== '' ? $_POST['width_cm'] : null;
+        $profileType = $_POST['profile_type'] ?? 'wood';
+        $stmt = $conn->prepare('UPDATE profiles SET name = ?, price = ?, stock = ?, width_cm = ?, profile_type = ? WHERE id = ?');
+        $stmt->execute([$_POST['name'], $_POST['price'], $_POST['stock'], $widthCm, $profileType, (int)$m[1]]);
         flash('Профилът е редактиран успешно!', 'success');
     } catch (Exception $e) {
         flash('Грешка при редактиране на профил: ' . $e->getMessage(), 'danger');
@@ -507,8 +461,8 @@ if ($uri === '/add_glass' && $method === 'POST') {
     require_login();
     $conn = get_db_connection();
     try {
-        $stmt = $conn->prepare('INSERT INTO glasses (name, price, stock) VALUES (?, ?, ?)');
-        $stmt->execute([$_POST['name'], $_POST['price'], $_POST['stock']]);
+        $stmt = $conn->prepare('INSERT INTO glasses (name, price, min_price, stock) VALUES (?, ?, ?, ?)');
+        $stmt->execute([$_POST['name'], $_POST['price'], $_POST['min_price'] ?? 0, $_POST['stock']]);
         flash('Стъклото е добавено успешно!', 'success');
     } catch (Exception $e) {
         flash('Грешка при добавяне на стъкло: ' . $e->getMessage(), 'danger');
@@ -520,8 +474,8 @@ if (preg_match('#^/edit_glass/(\d+)$#', $uri, $m) && $method === 'POST') {
     require_login();
     $conn = get_db_connection();
     try {
-        $stmt = $conn->prepare('UPDATE glasses SET name = ?, price = ?, stock = ? WHERE id = ?');
-        $stmt->execute([$_POST['name'], $_POST['price'], $_POST['stock'], (int)$m[1]]);
+        $stmt = $conn->prepare('UPDATE glasses SET name = ?, price = ?, min_price = ?, stock = ? WHERE id = ?');
+        $stmt->execute([$_POST['name'], $_POST['price'], $_POST['min_price'] ?? 0, $_POST['stock'], (int)$m[1]]);
         flash('Стъклото е редактирано успешно!', 'success');
     } catch (Exception $e) {
         flash('Грешка при редактиране на стъкло: ' . $e->getMessage(), 'danger');
@@ -549,10 +503,10 @@ if ($uri === '/add_passepartout' && $method === 'POST') {
     $conn = get_db_connection();
     try {
         $conn->beginTransaction();
-        $stmt = $conn->prepare('INSERT INTO passepartouts (name, price, stock) VALUES (?, ?, ?)');
-        $stmt->execute([$_POST['name'], $_POST['price'], $_POST['stock']]);
+        $stmt = $conn->prepare('INSERT INTO passepartouts (name, price, stock) VALUES (?, ?, 0)');
+        $stmt->execute([$_POST['name'], $_POST['price']]);
         $passepartoutId = (int)$conn->lastInsertId();
-        save_passepartout_sheet_types($conn, $passepartoutId, $_POST['sheet_types'] ?? []);
+        save_passepartout_sheet_stocks($conn, $passepartoutId, parse_passepartout_sheet_stocks_from_post());
         $conn->commit();
         flash('Паспартуто е добавено успешно!', 'success');
     } catch (Exception $e) {
@@ -570,9 +524,9 @@ if (preg_match('#^/edit_passepartout/(\d+)$#', $uri, $m) && $method === 'POST') 
     try {
         $passepartoutId = (int)$m[1];
         $conn->beginTransaction();
-        $stmt = $conn->prepare('UPDATE passepartouts SET name = ?, price = ?, stock = ? WHERE id = ?');
-        $stmt->execute([$_POST['name'], $_POST['price'], $_POST['stock'], $passepartoutId]);
-        save_passepartout_sheet_types($conn, $passepartoutId, $_POST['sheet_types'] ?? []);
+        $stmt = $conn->prepare('UPDATE passepartouts SET name = ?, price = ? WHERE id = ?');
+        $stmt->execute([$_POST['name'], $_POST['price'], $passepartoutId]);
+        save_passepartout_sheet_stocks($conn, $passepartoutId, parse_passepartout_sheet_stocks_from_post());
         $conn->commit();
         flash('Паспартуто е редактирано успешно!', 'success');
     } catch (Exception $e) {
@@ -595,6 +549,112 @@ if (preg_match('#^/delete_passepartout/(\d+)$#', $uri, $m)) {
         flash('Грешка при изтриване на паспарту: ' . $e->getMessage(), 'danger');
     }
     redirect('/passepartouts');
+}
+
+// --- Back actions ---
+
+if ($uri === '/add_back' && $method === 'POST') {
+    require_login();
+    $conn = get_db_connection();
+    try {
+        $stmt = $conn->prepare('INSERT INTO backs (name, price, min_price, stock) VALUES (?, ?, ?, ?)');
+        $stmt->execute([$_POST['name'], $_POST['price'], $_POST['min_price'] ?? 0, $_POST['stock'] ?? 0]);
+        flash('Гръбът е добавен успешно!', 'success');
+    } catch (Exception $e) {
+        flash('Грешка при добавяне: ' . $e->getMessage(), 'danger');
+    }
+    redirect('/backs');
+}
+
+if (preg_match('#^/edit_back/(\d+)$#', $uri, $m) && $method === 'POST') {
+    require_login();
+    $conn = get_db_connection();
+    try {
+        $stmt = $conn->prepare('UPDATE backs SET name = ?, price = ?, min_price = ?, stock = ? WHERE id = ?');
+        $stmt->execute([$_POST['name'], $_POST['price'], $_POST['min_price'] ?? 0, $_POST['stock'] ?? 0, (int)$m[1]]);
+        flash('Гръбът е редактиран успешно!', 'success');
+    } catch (Exception $e) {
+        flash('Грешка при редактиране: ' . $e->getMessage(), 'danger');
+    }
+    redirect('/backs');
+}
+
+if (preg_match('#^/delete_back/(\d+)$#', $uri, $m)) {
+    require_login();
+    $conn = get_db_connection();
+    try {
+        $stmt = $conn->prepare('DELETE FROM backs WHERE id = ?');
+        $stmt->execute([(int)$m[1]]);
+        flash('Гръбът е изтрит успешно!', 'success');
+    } catch (Exception $e) {
+        flash('Грешка при изтриване: ' . $e->getMessage(), 'danger');
+    }
+    redirect('/backs');
+}
+
+// --- Hanging actions ---
+
+if ($uri === '/add_hanging' && $method === 'POST') {
+    require_login();
+    $conn = get_db_connection();
+    try {
+        $stmt = $conn->prepare('INSERT INTO hanging_options (name, price, min_price, pricing_unit, stock) VALUES (?, ?, ?, ?, ?)');
+        $stmt->execute([
+            $_POST['name'],
+            $_POST['price'],
+            $_POST['min_price'] ?? 0,
+            $_POST['pricing_unit'] ?? 'piece',
+            $_POST['stock'] ?? 0,
+        ]);
+        flash('Опцията е добавена успешно!', 'success');
+    } catch (Exception $e) {
+        flash('Грешка при добавяне: ' . $e->getMessage(), 'danger');
+    }
+    redirect('/hanging');
+}
+
+if (preg_match('#^/edit_hanging/(\d+)$#', $uri, $m) && $method === 'POST') {
+    require_login();
+    $conn = get_db_connection();
+    try {
+        $name = trim($_POST['name'] ?? '');
+        $stock = (int)($_POST['stock'] ?? 0);
+
+        $stmt = $conn->prepare('UPDATE hanging_options SET name = ?, price = ?, min_price = ?, pricing_unit = ? WHERE id = ?');
+        $stmt->execute([
+            $name,
+            $_POST['price'],
+            $_POST['min_price'] ?? 0,
+            $_POST['pricing_unit'] ?? 'piece',
+            (int)$m[1],
+        ]);
+
+        if (hanging_shares_hanger_pool($name)) {
+            $conn->prepare('UPDATE hanging_options SET stock = ? WHERE TRIM(name) = ?')
+                ->execute([$stock, 'Закачалка']);
+        } else {
+            $conn->prepare('UPDATE hanging_options SET stock = ? WHERE id = ?')
+                ->execute([$stock, (int)$m[1]]);
+        }
+
+        flash('Опцията е редактирана успешно!', 'success');
+    } catch (Exception $e) {
+        flash('Грешка при редактиране: ' . $e->getMessage(), 'danger');
+    }
+    redirect('/hanging');
+}
+
+if (preg_match('#^/delete_hanging/(\d+)$#', $uri, $m)) {
+    require_login();
+    $conn = get_db_connection();
+    try {
+        $stmt = $conn->prepare('DELETE FROM hanging_options WHERE id = ?');
+        $stmt->execute([(int)$m[1]]);
+        flash('Опцията е изтрита успешно!', 'success');
+    } catch (Exception $e) {
+        flash('Грешка при изтриване: ' . $e->getMessage(), 'danger');
+    }
+    redirect('/hanging');
 }
 
 http_response_code(404);

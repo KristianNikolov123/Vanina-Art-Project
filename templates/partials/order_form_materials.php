@@ -2,6 +2,8 @@
 $profiles = $profiles ?? [];
 $glasses = $glasses ?? [];
 $passepartouts = $passepartouts ?? [];
+$backs = $backs ?? [];
+$hanging_options = $hanging_options ?? [];
 $additionalProfilesId = $additionalProfilesId ?? 'additionalProfiles';
 ?>
 <div class="row">
@@ -41,6 +43,26 @@ $additionalProfilesId = $additionalProfilesId ?? 'additionalProfiles';
             <option value=""></option>
             <?php foreach ($passepartouts as $passepartout): ?>
             <option value="<?= (int)$passepartout['id'] ?>"><?= e($passepartout['name']) ?></option>
+            <?php endforeach; ?>
+        </select>
+    </div>
+</div>
+<div class="row">
+    <div class="col-md-6 mb-3">
+        <label class="form-label">Гръб</label>
+        <select class="form-select order-price-trigger" name="back">
+            <option value=""></option>
+            <?php foreach ($backs as $back): ?>
+            <option value="<?= e($back['name']) ?>"><?= e($back['name']) ?></option>
+            <?php endforeach; ?>
+        </select>
+    </div>
+    <div class="col-md-6 mb-3">
+        <label class="form-label">Окачване</label>
+        <select class="form-select order-price-trigger" name="hanging">
+            <option value=""></option>
+            <?php foreach ($hanging_options as $option): ?>
+            <option value="<?= e($option['name']) ?>"><?= e($option['name']) ?></option>
             <?php endforeach; ?>
         </select>
     </div>

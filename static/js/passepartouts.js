@@ -9,17 +9,16 @@ function editPassepartout(passepartoutId) {
     const data = {
         name: row.querySelector('.name').textContent,
         price: row.querySelector('.price').textContent,
-        stock: row.querySelector('.badge').textContent.trim(),
-        sheetTypes: JSON.parse(row.dataset.sheetTypes || '[]')
+        sheetStocks: JSON.parse(row.dataset.sheetStocks || '{}')
     };
 
     const form = document.getElementById('editPassepartoutForm');
     form.querySelector('[name="name"]').value = data.name;
     form.querySelector('[name="price"]').value = data.price;
-    form.querySelector('[name="stock"]').value = data.stock;
 
-    form.querySelectorAll('.edit-sheet-type').forEach((checkbox) => {
-        checkbox.checked = data.sheetTypes.includes(parseInt(checkbox.value, 10));
+    form.querySelectorAll('.edit-sheet-stock').forEach((input) => {
+        const sheetId = input.dataset.sheetId;
+        input.value = data.sheetStocks[sheetId] ?? data.sheetStocks[parseInt(sheetId, 10)] ?? 0;
     });
 
     form.action = `${window.BASE_PATH}/edit_passepartout/${passepartoutId}`;

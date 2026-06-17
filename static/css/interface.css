@@ -20,6 +20,18 @@
     cursor: pointer;
 }
 
+.order-row--extras td {
+    background-color: #fff8e6 !important;
+}
+
+.order-row--extras:hover td {
+    background-color: #ffefcc !important;
+}
+
+.order-row--extras {
+    box-shadow: inset 4px 0 0 #f0ad4e;
+}
+
 .btn-group-xs > .btn {
     padding: 0.1rem 0.3rem;
     font-size: 0.75rem;

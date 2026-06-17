@@ -7,17 +7,11 @@ function confirmDelete(glassId) {
 function editGlass(glassId) {
     // Get glass data from the table row
     const row = document.querySelector(`tr[data-glass-id="${glassId}"]`);
-    const data = {
-        name: row.querySelector('.name').textContent,
-        price: row.querySelector('.price').textContent,
-        stock: row.querySelector('.badge').textContent.trim()
-    };
-
-    // Fill the edit form
     const form = document.getElementById('editGlassForm');
-    form.querySelector('[name="name"]').value = data.name;
-    form.querySelector('[name="price"]').value = data.price;
-    form.querySelector('[name="stock"]').value = data.stock;
+    form.querySelector('[name="name"]').value = row.querySelector('.name').textContent;
+    form.querySelector('[name="price"]').value = row.querySelector('.price').textContent;
+    form.querySelector('[name="min_price"]').value = row.querySelector('.min-price').textContent;
+    form.querySelector('[name="stock"]').value = row.querySelector('.badge').textContent.trim();
 
     // Update form action
     form.action = `${window.BASE_PATH}/edit_glass/${glassId}`;

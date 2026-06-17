@@ -7,15 +7,18 @@ function confirmDelete(profileId) {
 function editProfile(profileId) {
     // Get profile data from the table row
     const row = document.querySelector(`tr[data-profile-id="${profileId}"]`);
+    const widthText = row.querySelector('.width-cm').textContent.trim();
     const data = {
         name: row.querySelector('.name').textContent,
+        width_cm: widthText === '—' ? '' : widthText,
         price: row.querySelector('.price').textContent,
         stock: row.querySelector('.badge').textContent.trim()
     };
 
-    // Fill the edit form
     const form = document.getElementById('editProfileForm');
     form.querySelector('[name="name"]').value = data.name;
+    form.querySelector('[name="profile_type"]').value = row.dataset.profileType || 'wood';
+    form.querySelector('[name="width_cm"]').value = data.width_cm;
     form.querySelector('[name="price"]').value = data.price;
     form.querySelector('[name="stock"]').value = data.stock;
 

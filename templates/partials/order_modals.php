@@ -22,26 +22,7 @@
                         </div>
                     </div>
                     <?php $additionalProfilesId = 'additionalProfiles'; include __DIR__ . '/order_form_materials.php'; ?>
-                    <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">Гръб</label>
-                            <select class="form-select" name="back">
-                                <option value=""></option>
-                                <option value="Велпапе">Велп</option>
-                                <option value="Бирен картон">Бирен</option>
-                                <option value="Сив картон">Сив</option>
-                            </select>
-                        </div>
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">Окачване</label>
-                            <select class="form-select" name="hanging">
-                                <option value=""></option>
-                                <option value="Закачалка">Закач</option>
-                                <option value="Две закачалки">2 закач</option>
-                                <option value="Връзка">Връзка</option>
-                            </select>
-                        </div>
-                    </div>
+                    <?php $extrasId = 'add'; include __DIR__ . '/order_form_extras.php'; ?>
                     <div class="row">
                         <div class="col-md-6 mb-3">
                             <label class="form-label">Име на клиент</label>
@@ -63,8 +44,9 @@
                             <input type="number" class="form-control" name="advance_payment" step="0.01">
                         </div>
                         <div class="col-md-4 mb-3">
-                            <label class="form-label">Отстъпка</label>
-                            <input type="number" class="form-control" name="discount" step="0.01">
+                            <label class="form-label">Ръчна отстъпка (€)</label>
+                            <input type="number" class="form-control order-price-trigger" name="discount" step="0.01">
+                            <div class="form-text">Обемна (−5%/−10%) и ученическа се смятат автоматично</div>
                         </div>
                     </div>
                     <div class="row">
@@ -115,26 +97,7 @@
                         </div>
                     </div>
                     <?php $additionalProfilesId = 'additionalProfilesEdit'; include __DIR__ . '/order_form_materials.php'; ?>
-                    <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">Гръб</label>
-                            <select class="form-select" name="back">
-                                <option value=""></option>
-                                <option value="Велпапе">Велп</option>
-                                <option value="Бирен картон">Бирен</option>
-                                <option value="Сив картон">Сив</option>
-                            </select>
-                        </div>
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">Окачване</label>
-                            <select class="form-select" name="hanging">
-                                <option value=""></option>
-                                <option value="Закачалка">Закач</option>
-                                <option value="Две закачалки">2 закач</option>
-                                <option value="Връзка">Връзка</option>
-                            </select>
-                        </div>
-                    </div>
+                    <?php $extrasId = 'edit'; include __DIR__ . '/order_form_extras.php'; ?>
                     <div class="row">
                         <div class="col-md-6 mb-3">
                             <label class="form-label">Име на клиент</label>
@@ -149,15 +112,16 @@
                         <div class="col-md-4 mb-3">
                             <label class="form-label">Цена</label>
                             <input type="number" class="form-control" name="price" step="0.01">
-                            <div class="form-text">Оставете празно за автоматично изчисление</div>
+                            <div class="form-text">Обновява се автоматично при промяна на материалите</div>
                         </div>
                         <div class="col-md-4 mb-3">
                             <label class="form-label">Аванс</label>
                             <input type="number" class="form-control" name="advance_payment" step="0.01">
                         </div>
                         <div class="col-md-4 mb-3">
-                            <label class="form-label">Отстъпка</label>
-                            <input type="number" class="form-control" name="discount" step="0.01">
+                            <label class="form-label">Ръчна отстъпка (€)</label>
+                            <input type="number" class="form-control order-price-trigger" name="discount" step="0.01">
+                            <div class="form-text">Обемна (−5%/−10%) и ученическа се смятат автоматично</div>
                         </div>
                     </div>
                     <div class="row">
@@ -208,26 +172,7 @@
                         </div>
                     </div>
                     <?php $additionalProfilesId = 'additionalProfilesSub'; include __DIR__ . '/order_form_materials.php'; ?>
-                    <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">Гръб</label>
-                            <select class="form-select" name="back">
-                                <option value=""></option>
-                                <option value="Велпапе">Велп</option>
-                                <option value="Бирен картон">Бирен</option>
-                                <option value="Сив картон">Сив</option>
-                            </select>
-                        </div>
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">Окачване</label>
-                            <select class="form-select" name="hanging">
-                                <option value=""></option>
-                                <option value="Закачалка">Закач</option>
-                                <option value="Две закачалки">2 закач</option>
-                                <option value="Връзка">Връзка</option>
-                            </select>
-                        </div>
-                    </div>
+                    <?php $extrasId = 'sub'; include __DIR__ . '/order_form_extras.php'; ?>
                     <div class="row">
                         <div class="col-md-6 mb-3">
                             <label class="form-label">Описание</label>
@@ -245,8 +190,9 @@
                             <input type="number" class="form-control" name="advance_payment" step="0.01">
                         </div>
                         <div class="col-md-4 mb-3">
-                            <label class="form-label">Отстъпка</label>
-                            <input type="number" class="form-control" name="discount" step="0.01">
+                            <label class="form-label">Ръчна отстъпка (€)</label>
+                            <input type="number" class="form-control order-price-trigger" name="discount" step="0.01">
+                            <div class="form-text">Обемна (−5%/−10%) и ученическа се смятат автоматично</div>
                         </div>
                         <div class="col-md-4 mb-3">
                             <div class="form-check mt-4">
@@ -264,6 +210,105 @@
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отказ</button>
                 <button type="submit" form="addSubOrderForm" class="btn btn-primary">Запази</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="viewOrderModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Поръчка <span id="viewOrderNumber"></span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row mb-3">
+                    <div class="col-md-4">
+                        <div class="text-muted small">Дата</div>
+                        <div id="viewOrderDate"></div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="text-muted small">Размер</div>
+                        <div id="viewOrderSize"></div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="text-muted small">Брой рамки</div>
+                        <div id="viewOrderFrameCount"></div>
+                    </div>
+                </div>
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <div class="text-muted small">Профил</div>
+                        <div id="viewOrderProfile"></div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="text-muted small">Доп. профили</div>
+                        <div id="viewOrderAdditionalProfiles"></div>
+                    </div>
+                </div>
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <div class="text-muted small">Стъкло</div>
+                        <div id="viewOrderGlass"></div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="text-muted small">Паспарту</div>
+                        <div id="viewOrderPassepartout"></div>
+                    </div>
+                </div>
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <div class="text-muted small">Гръб</div>
+                        <div id="viewOrderBack"></div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="text-muted small">Окачване</div>
+                        <div id="viewOrderHanging"></div>
+                    </div>
+                </div>
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <div class="text-muted small">Клиент</div>
+                        <div id="viewOrderCustomer"></div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="text-muted small">Статус</div>
+                        <div id="viewOrderStatus"></div>
+                    </div>
+                </div>
+                <div class="mb-3" id="viewOrderDescriptionBlock" style="display: none;">
+                    <div class="text-muted small">Описание</div>
+                    <div id="viewOrderDescription" style="white-space: pre-wrap;"></div>
+                </div>
+                <div class="row mb-3">
+                    <div class="col-md-4">
+                        <div class="text-muted small">Цена</div>
+                        <div id="viewOrderPrice" class="fw-semibold"></div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="text-muted small">Аванс</div>
+                        <div id="viewOrderAdvance"></div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="text-muted small">Ръчна отстъпка</div>
+                        <div id="viewOrderDiscount"></div>
+                    </div>
+                </div>
+                <div class="card border-secondary-subtle mb-0" id="viewOrderExtrasCard" style="display: none;">
+                    <div class="card-header py-2 bg-transparent">
+                        <small class="fw-semibold"><i class="fas fa-sliders-h me-1"></i> Допълнителни опции</small>
+                    </div>
+                    <div class="card-body pt-2 pb-3">
+                        <ul class="mb-0 ps-3" id="viewOrderExtrasList"></ul>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Затвори</button>
+                <button type="button" class="btn btn-primary" id="viewOrderEditBtn">
+                    <i class="fas fa-edit"></i> Редактирай
+                </button>
             </div>
         </div>
     </div>

@@ -33,20 +33,21 @@
                             <i class="fas fa-list"></i> Поръчки
                         </a>
                     </li>
-                    <li class="nav-item">
-                        <a class="nav-link <?= $current_page === 'profiles' ? 'active' : '' ?>" href="<?= url_for('profiles') ?>">
-                            <i class="fas fa-border-all"></i> Профили
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle <?= is_inventory_page($current_page ?? '') ? 'active' : '' ?>"
+                           href="#" role="button" data-bs-toggle="dropdown">
+                            <i class="fas fa-warehouse"></i> Склад
                         </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link <?= $current_page === 'glasses' ? 'active' : '' ?>" href="<?= url_for('glasses') ?>">
-                            <i class="fas fa-window-maximize"></i> Стъкла
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link <?= $current_page === 'passepartouts' ? 'active' : '' ?>" href="<?= url_for('passepartouts') ?>">
-                            <i class="fas fa-image"></i> Паспартута
-                        </a>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="<?= url_for('warehouse') ?>"><i class="fas fa-th-large me-2"></i>Преглед</a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="<?= url_for('profiles') ?>"><i class="fas fa-border-all me-2"></i>Профили</a></li>
+                            <li><a class="dropdown-item" href="<?= url_for('glasses') ?>"><i class="fas fa-window-maximize me-2"></i>Стъкла</a></li>
+                            <li><a class="dropdown-item" href="<?= url_for('passepartouts') ?>"><i class="fas fa-image me-2"></i>Паспарту</a></li>
+                            <li><a class="dropdown-item" href="<?= url_for('backs') ?>"><i class="fas fa-layer-group me-2"></i>Гръбове</a></li>
+                            <li><a class="dropdown-item" href="<?= url_for('hanging') ?>"><i class="fas fa-link me-2"></i>Окачване</a></li>
+                            <li><a class="dropdown-item" href="<?= url_for('services') ?>"><i class="fas fa-tools me-2"></i>Услуги</a></li>
+                        </ul>
                     </li>
                     <?php if ($current_user && User::isAdminEmail($current_user->email)): ?>
                     <li class="nav-item">

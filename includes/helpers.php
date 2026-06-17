@@ -9,9 +9,15 @@ function url_for(string $route, array $params = []): string
         'logout' => '/logout',
         'archives' => '/archives',
         'interface' => '/interface',
+        'warehouse' => '/warehouse',
         'profiles' => '/profiles',
         'glasses' => '/glasses',
         'passepartouts' => '/passepartouts',
+        'backs' => '/backs',
+        'hanging' => '/hanging',
+        'services' => '/services',
+        'add_back' => '/add_back',
+        'add_hanging' => '/add_hanging',
         'submit_feedback' => '/submit_feedback',
         'add_order' => '/add_order',
         'add_profile' => '/add_profile',
@@ -129,6 +135,8 @@ function short_back(?string $value): string
         'Велпапе' => 'Велп',
         'Бирен картон' => 'Бирен',
         'Сив картон' => 'Сив',
+        'Пенокартон' => 'Пено',
+        'Фазер' => 'Фазер',
     ];
     return $mapping[$value] ?? ($value ?? '');
 }
@@ -148,11 +156,101 @@ function e(?string $value): string
     return htmlspecialchars($value ?? '', ENT_QUOTES, 'UTF-8');
 }
 
+function order_has_extras(array $order): bool
+{
+    $serviceIds = parse_extra_service_ids($order['extra_services'] ?? '[]');
+    $openings = (int)($order['passepartout_openings'] ?? 1);
+    $transportKm = (float)($order['transport_km'] ?? 0);
+    $frameShape = trim($order['frame_shape'] ?? '');
+
+    return !empty($order['urgent'])
+        || !empty($order['student_discount'])
+        || !empty($order['complex_passepartout'])
+        || !empty($order['frame_box'])
+        || !empty($order['frame_nonstandard'])
+        || !empty($order['frame_high_complexity'])
+        || !empty($order['client_passepartout_cutting'])
+        || $frameShape !== ''
+        || $openings > 1
+        || $transportKm > 0
+        || count($serviceIds) > 0;
+}
+
+function format_order_extras_labels(array $order, array $servicesById = []): array
+{
+    $labels = [];
+
+    if (!empty($order['urgent'])) {
+        $labels[] = 'Спешна';
+    }
+    if (!empty($order['student_discount'])) {
+        $labels[] = 'Ученик';
+    }
+    if (!empty($order['complex_passepartout'])) {
+        $labels[] = 'Сложно паспарту';
+    }
+    if (!empty($order['frame_box'])) {
+        $labels[] = 'Рамка кутия';
+    }
+    if (!empty($order['frame_nonstandard'])) {
+        $labels[] = 'Нестандартна рамка';
+    }
+    if (!empty($order['frame_high_complexity'])) {
+        $labels[] = 'Висока сложност';
+    }
+    if (!empty($order['client_passepartout_cutting'])) {
+        $labels[] = 'Рязане паспарту на клиент';
+    }
+
+    $frameShape = $order['frame_shape'] ?? '';
+    if ($frameShape === 'ellipse_12') {
+        $labels[] = 'Елипса / кръг 12 страни';
+    } elseif ($frameShape === 'circle_24') {
+        $labels[] = 'Кръг 24 страни';
+    }
+
+    $openings = (int)($order['passepartout_openings'] ?? 1);
+    if ($openings > 1) {
+        $labels[] = "{$openings} отвора";
+    }
+
+    $transportKm = (float)($order['transport_km'] ?? 0);
+    if ($transportKm > 0) {
+        $labels[] = 'Транспорт ' . rtrim(rtrim(number_format($transportKm, 2, '.', ''), '0'), '.') . ' км';
+    }
+
+    foreach (parse_extra_service_ids($order['extra_services'] ?? '[]') as $serviceId) {
+        if (isset($servicesById[$serviceId])) {
+            $labels[] = $servicesById[$serviceId];
+        }
+    }
+
+    return $labels;
+}
+
 function full_url(string $path): string
 {
     $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
     $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
     return $scheme . '://' . $host . BASE_PATH . $path;
+}
+
+function parse_passepartout_sheet_stocks_from_post(): array
+{
+    $stocks = [];
+    $posted = $_POST['sheet_stock'] ?? [];
+    if (!is_array($posted)) {
+        return $stocks;
+    }
+
+    foreach ($posted as $sheetTypeId => $stock) {
+        $sheetTypeId = (int)$sheetTypeId;
+        if ($sheetTypeId > 0 && $stock !== '') {
+            $stocks[$sheetTypeId] = (float)$stock;
+        }
+    }
+
+    return $stocks;
 }
 
 function get_additional_profiles(): ?string
@@ -170,6 +268,11 @@ function build_order_from_post(?string $customerName = null): array
     $passepartoutId = (int)($_POST['passepartout_id'] ?? 0);
     $passepartoutName = trim($_POST['passepartout'] ?? '');
 
+    $extraServices = $_POST['extra_services'] ?? [];
+    if (!is_array($extraServices)) {
+        $extraServices = [];
+    }
+
     return [
         'width' => $_POST['width'] ?? null,
         'height' => $_POST['height'] ?? null,
@@ -177,6 +280,20 @@ function build_order_from_post(?string $customerName = null): array
         'glass' => $_POST['glass'] ?? '',
         'passepartout' => $passepartoutName,
         'passepartout_id' => $passepartoutId > 0 ? $passepartoutId : null,
+        'back' => trim($_POST['back'] ?? ''),
+        'hanging' => trim($_POST['hanging'] ?? ''),
+        'passepartout_openings' => max(1, (int)($_POST['passepartout_openings'] ?? 1)),
+        'urgent' => isset($_POST['urgent']) ? 1 : 0,
+        'student_discount' => isset($_POST['student_discount']) ? 1 : 0,
+        'complex_passepartout' => isset($_POST['complex_passepartout']) ? 1 : 0,
+        'extra_services' => json_encode(array_values(array_map('intval', $extraServices))),
+        'transport_km' => ($_POST['transport_km'] ?? '') !== '' ? (float)$_POST['transport_km'] : null,
+        'frame_box' => isset($_POST['frame_box']) ? 1 : 0,
+        'frame_nonstandard' => isset($_POST['frame_nonstandard']) ? 1 : 0,
+        'frame_shape' => in_array($_POST['frame_shape'] ?? '', ['ellipse_12', 'circle_24'], true) ? $_POST['frame_shape'] : '',
+        'frame_high_complexity' => isset($_POST['frame_high_complexity']) ? 1 : 0,
+        'client_passepartout_cutting' => isset($_POST['client_passepartout_cutting']) ? 1 : 0,
+        'manual_discount' => ($_POST['discount'] ?? '') !== '' ? (float)$_POST['discount'] : 0,
         'additional_profiles' => get_additional_profiles(),
         'frame_count' => $_POST['frame_count'] ?? 1,
         'customer_name' => $customerName ?? ($_POST['customer_name'] ?? ''),
@@ -191,6 +308,81 @@ function resolve_order_price(PDO $conn, array $order, ?string $postedPrice): ?fl
 
     $pricing = calculate_order_pricing($conn, $order);
     return $pricing['total'] > 0 ? $pricing['total'] : null;
+}
+
+function order_bind_values(array $order): array
+{
+    return [
+        $order['date'],
+        $order['width'],
+        $order['height'],
+        $order['profile'],
+        $order['glass'],
+        $order['passepartout'],
+        $order['passepartout_bill_width'],
+        $order['passepartout_bill_height'],
+        $order['passepartout_sheet_type_id'],
+        $order['passepartout_sheet_usage'],
+        $order['back'],
+        $order['hanging'],
+        $order['customer_name'],
+        $order['price'],
+        $order['paid'],
+        $order['collected'],
+        $order['additional_profiles'],
+        $order['frame_count'],
+        $order['advance_payment'],
+        $order['discount'],
+        $order['description'],
+        $order['passepartout_openings'],
+        $order['urgent'],
+        $order['student_discount'],
+        $order['complex_passepartout'],
+        $order['extra_services'],
+        $order['transport_km'],
+        $order['frame_box'],
+        $order['frame_nonstandard'],
+        $order['frame_shape'],
+        $order['frame_high_complexity'],
+        $order['client_passepartout_cutting'],
+    ];
+}
+
+function insert_order_row(PDO $conn, array $order, int $orderNumber, int $subOrderNumber): void
+{
+    $stmt = $conn->prepare('
+        INSERT INTO orders (
+            order_number, sub_order_number, date, width, height, profile, glass, passepartout,
+            passepartout_bill_width, passepartout_bill_height,
+            passepartout_sheet_type_id, passepartout_sheet_usage,
+            back, hanging, customer_name, price, paid, collected,
+            additional_profiles, frame_count, advance_payment, discount, description,
+            passepartout_openings, urgent, student_discount, complex_passepartout, extra_services, transport_km,
+            frame_box, frame_nonstandard, frame_shape, frame_high_complexity, client_passepartout_cutting
+        ) VALUES (
+            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+        )
+    ');
+    $stmt->execute(array_merge([$orderNumber, $subOrderNumber], order_bind_values($order)));
+}
+
+function update_order_row(PDO $conn, array $order, int $orderId): void
+{
+    $stmt = $conn->prepare('
+        UPDATE orders SET
+            date = ?, width = ?, height = ?, profile = ?, glass = ?,
+            passepartout = ?, passepartout_bill_width = ?, passepartout_bill_height = ?,
+            passepartout_sheet_type_id = ?, passepartout_sheet_usage = ?,
+            back = ?, hanging = ?, customer_name = ?,
+            price = ?, paid = ?, collected = ?, additional_profiles = ?,
+            frame_count = ?, advance_payment = ?, discount = ?, description = ?,
+            passepartout_openings = ?, urgent = ?, student_discount = ?,
+            complex_passepartout = ?, extra_services = ?, transport_km = ?,
+            frame_box = ?, frame_nonstandard = ?, frame_shape = ?, frame_high_complexity = ?,
+            client_passepartout_cutting = ?
+        WHERE id = ?
+    ');
+    $stmt->execute(array_merge(order_bind_values($order), [$orderId]));
 }
 
 function prepare_order_persistence(PDO $conn, array $post, ?string $customerName = null): array
@@ -208,6 +400,8 @@ function prepare_order_persistence(PDO $conn, array $post, ?string $customerName
         'passepartout' => $stockOrder['passepartout'] ?? ($post['passepartout'] ?? ''),
         'passepartout_bill_width' => $stockOrder['passepartout_bill_width'] ?? null,
         'passepartout_bill_height' => $stockOrder['passepartout_bill_height'] ?? null,
+        'passepartout_sheet_type_id' => $stockOrder['passepartout_sheet_type_id'] ?? null,
+        'passepartout_sheet_usage' => $stockOrder['passepartout_sheet_usage'] ?? null,
         'back' => $post['back'] ?? '',
         'hanging' => $post['hanging'] ?? '',
         'customer_name' => $customerName ?? ($post['customer_name'] ?? ''),
@@ -219,5 +413,16 @@ function prepare_order_persistence(PDO $conn, array $post, ?string $customerName
         'advance_payment' => $post['advance_payment'] ?? null,
         'discount' => $post['discount'] ?? null,
         'description' => $post['description'] ?? '',
+        'passepartout_openings' => max(1, (int)($post['passepartout_openings'] ?? 1)),
+        'urgent' => isset($post['urgent']) ? 1 : 0,
+        'student_discount' => isset($post['student_discount']) ? 1 : 0,
+        'complex_passepartout' => isset($post['complex_passepartout']) ? 1 : 0,
+        'extra_services' => json_encode(array_values(array_map('intval', $post['extra_services'] ?? []))),
+        'transport_km' => ($post['transport_km'] ?? '') !== '' ? (float)$post['transport_km'] : null,
+        'frame_box' => isset($post['frame_box']) ? 1 : 0,
+        'frame_nonstandard' => isset($post['frame_nonstandard']) ? 1 : 0,
+        'frame_shape' => in_array($post['frame_shape'] ?? '', ['ellipse_12', 'circle_24'], true) ? $post['frame_shape'] : '',
+        'frame_high_complexity' => isset($post['frame_high_complexity']) ? 1 : 0,
+        'client_passepartout_cutting' => isset($post['client_passepartout_cutting']) ? 1 : 0,
     ];
 }

@@ -1,4 +1,6 @@
-<div class="container-fluid">
+<?php include __DIR__ . '/partials/warehouse_nav.php'; ?>
+
+<div class="container-fluid px-0">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h1>Профили</h1>
         <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addProfileModal">
@@ -22,6 +24,8 @@
             <thead class="table-dark">
                 <tr>
                     <th>Име</th>
+                    <th>Ширина (см)</th>
+                    <th>Тип</th>
                     <th>Цена (€/л.м.)</th>
                     <th>Наличност (л.м.)</th>
                     <th>Действия</th>
@@ -29,8 +33,10 @@
             </thead>
             <tbody>
                 <?php foreach ($profiles as $profile): ?>
-                <tr data-profile-id="<?= (int)$profile['id'] ?>">
+                <tr data-profile-id="<?= (int)$profile['id'] ?>" data-profile-type="<?= e($profile['profile_type'] ?? 'wood') ?>">
                     <td class="name"><?= e($profile['name']) ?></td>
+                    <td class="width-cm"><?= e($profile['width_cm'] ?? '—') ?></td>
+                    <td class="profile-type"><?= e(['wood' => 'Дърво', 'metal' => 'Метал', 'client_material' => 'Клиент'][$profile['profile_type'] ?? 'wood'] ?? 'Дърво') ?></td>
                     <td class="price"><?= e($profile['price']) ?></td>
                     <td>
                         <span class="badge <?= $profile['stock'] > 0 ? 'bg-success' : 'bg-danger' ?>">
@@ -66,8 +72,22 @@
                         <input type="text" class="form-control" name="name" required>
                     </div>
                     <div class="mb-3">
+                        <label class="form-label">Тип профил</label>
+                        <select class="form-select" name="profile_type">
+                            <option value="wood">Дърво/пластмаса</option>
+                            <option value="metal">Метален</option>
+                            <option value="client_material">Материал на клиент</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Ширина на профила (см)</label>
+                        <input type="number" class="form-control" name="width_cm" step="0.1" min="0">
+                        <div class="form-text">За труд и широк профил (≥10 см, страна &gt;2.5 м → 3 м)</div>
+                    </div>
+                    <div class="mb-3">
                         <label class="form-label">Цена (€/л.м.)</label>
                         <input type="number" class="form-control" name="price" step="0.01" required>
+                        <div class="form-text">При „материал на клиент" може да е 0</div>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Наличност (л.м.)</label>
@@ -95,6 +115,18 @@
                     <div class="mb-3">
                         <label class="form-label">Име</label>
                         <input type="text" class="form-control" name="name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Тип профил</label>
+                        <select class="form-select" name="profile_type">
+                            <option value="wood">Дърво/пластмаса</option>
+                            <option value="metal">Метален</option>
+                            <option value="client_material">Материал на клиент</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Ширина на профила (см)</label>
+                        <input type="number" class="form-control" name="width_cm" step="0.1" min="0">
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Цена (€/л.м.)</label>

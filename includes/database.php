@@ -91,15 +91,199 @@ function ensure_pricing_schema(PDO $conn): void
         ');
     }
 
-    $orderColumns = ['passepartout_bill_width', 'passepartout_bill_height'];
-    foreach ($orderColumns as $column) {
+    if ($isMysql) {
+        $conn->exec('
+            CREATE TABLE IF NOT EXISTS passepartout_sheet_stock (
+                passepartout_id INT UNSIGNED NOT NULL,
+                sheet_type_id INT UNSIGNED NOT NULL,
+                stock DECIMAL(10, 4) NOT NULL DEFAULT 0,
+                PRIMARY KEY (passepartout_id, sheet_type_id),
+                CONSTRAINT fk_pp_stock_passepartout
+                    FOREIGN KEY (passepartout_id) REFERENCES passepartouts (id) ON DELETE CASCADE,
+                CONSTRAINT fk_pp_stock_sheet
+                    FOREIGN KEY (sheet_type_id) REFERENCES passepartout_sheet_types (id) ON DELETE CASCADE
+            ) ENGINE=InnoDB
+        ');
+    } else {
+        $conn->exec('
+            CREATE TABLE IF NOT EXISTS passepartout_sheet_stock (
+                passepartout_id INTEGER NOT NULL,
+                sheet_type_id INTEGER NOT NULL,
+                stock REAL NOT NULL DEFAULT 0,
+                PRIMARY KEY (passepartout_id, sheet_type_id),
+                FOREIGN KEY (passepartout_id) REFERENCES passepartouts (id) ON DELETE CASCADE,
+                FOREIGN KEY (sheet_type_id) REFERENCES passepartout_sheet_types (id) ON DELETE CASCADE
+            )
+        ');
+    }
+
+    $orderColumns = [
+        'passepartout_bill_width' => $isMysql ? 'DECIMAL(10,2) NULL' : 'REAL',
+        'passepartout_bill_height' => $isMysql ? 'DECIMAL(10,2) NULL' : 'REAL',
+        'passepartout_sheet_type_id' => $isMysql ? 'INT UNSIGNED NULL' : 'INTEGER',
+        'passepartout_sheet_usage' => $isMysql ? 'DECIMAL(10,4) NULL' : 'REAL',
+    ];
+    foreach ($orderColumns as $column => $type) {
         if (!table_has_column($conn, 'orders', $column)) {
-            $type = $isMysql ? 'DECIMAL(10,2) NULL' : 'REAL';
             $conn->exec("ALTER TABLE orders ADD COLUMN {$column} {$type}");
         }
     }
 
     seed_passepartout_sheet_catalog($conn);
+    ensure_oversize_passepartout_cuts($conn);
+    migrate_legacy_passepartout_stock($conn);
+    ensure_catalog_schema($conn);
+}
+
+function ensure_catalog_schema(PDO $conn): void
+{
+    $isMysql = $conn->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql';
+
+    if ($isMysql) {
+        $conn->exec('
+            CREATE TABLE IF NOT EXISTS backs (
+                id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                name VARCHAR(255) NOT NULL,
+                price DECIMAL(10, 2) NOT NULL,
+                min_price DECIMAL(10, 2) NOT NULL DEFAULT 0,
+                stock DECIMAL(10, 2) NOT NULL DEFAULT 0,
+                UNIQUE KEY uq_backs_name (name)
+            ) ENGINE=InnoDB
+        ');
+        $conn->exec('
+            CREATE TABLE IF NOT EXISTS hanging_options (
+                id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                name VARCHAR(255) NOT NULL,
+                price DECIMAL(10, 2) NOT NULL,
+                min_price DECIMAL(10, 2) NOT NULL DEFAULT 0,
+                pricing_unit VARCHAR(20) NOT NULL DEFAULT "piece",
+                stock INT NOT NULL DEFAULT 0,
+                UNIQUE KEY uq_hanging_name (name)
+            ) ENGINE=InnoDB
+        ');
+        $conn->exec('
+            CREATE TABLE IF NOT EXISTS pricing_settings (
+                setting_key VARCHAR(100) PRIMARY KEY,
+                setting_value DECIMAL(10, 4) NOT NULL,
+                label VARCHAR(255) NOT NULL,
+                category VARCHAR(50) NOT NULL DEFAULT "general"
+            ) ENGINE=InnoDB
+        ');
+    } else {
+        $conn->exec('
+            CREATE TABLE IF NOT EXISTS backs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                price REAL NOT NULL,
+                min_price REAL NOT NULL DEFAULT 0,
+                stock REAL NOT NULL DEFAULT 0
+            )
+        ');
+        $conn->exec('
+            CREATE TABLE IF NOT EXISTS hanging_options (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                price REAL NOT NULL,
+                min_price REAL NOT NULL DEFAULT 0,
+                pricing_unit TEXT NOT NULL DEFAULT "piece",
+                stock INTEGER NOT NULL DEFAULT 0
+            )
+        ');
+        $conn->exec('
+            CREATE TABLE IF NOT EXISTS pricing_settings (
+                setting_key TEXT PRIMARY KEY,
+                setting_value REAL NOT NULL,
+                label TEXT NOT NULL,
+                category TEXT NOT NULL DEFAULT "general"
+            )
+        ');
+    }
+
+    if (!table_has_column($conn, 'glasses', 'min_price')) {
+        $type = $isMysql ? 'DECIMAL(10,2) NOT NULL DEFAULT 0' : 'REAL NOT NULL DEFAULT 0';
+        $conn->exec("ALTER TABLE glasses ADD COLUMN min_price {$type}");
+    }
+
+    if (!table_has_column($conn, 'profiles', 'width_cm')) {
+        $type = $isMysql ? 'DECIMAL(10,2) NULL' : 'REAL';
+        $conn->exec("ALTER TABLE profiles ADD COLUMN width_cm {$type}");
+    }
+
+    if (!table_has_column($conn, 'profiles', 'profile_type')) {
+        $type = $isMysql ? "VARCHAR(20) NOT NULL DEFAULT 'wood'" : "TEXT NOT NULL DEFAULT 'wood'";
+        $conn->exec("ALTER TABLE profiles ADD COLUMN profile_type {$type}");
+    }
+
+    if ($isMysql) {
+        $conn->exec('
+            CREATE TABLE IF NOT EXISTS services (
+                id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                name VARCHAR(255) NOT NULL,
+                price DECIMAL(10, 2) NOT NULL,
+                min_price DECIMAL(10, 2) NOT NULL DEFAULT 0,
+                pricing_unit VARCHAR(20) NOT NULL DEFAULT "piece",
+                category VARCHAR(50) NOT NULL DEFAULT "general",
+                UNIQUE KEY uq_services_name (name)
+            ) ENGINE=InnoDB
+        ');
+    } else {
+        $conn->exec('
+            CREATE TABLE IF NOT EXISTS services (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                price REAL NOT NULL,
+                min_price REAL NOT NULL DEFAULT 0,
+                pricing_unit TEXT NOT NULL DEFAULT "piece",
+                category TEXT NOT NULL DEFAULT "general"
+            )
+        ');
+    }
+
+    $orderExtraColumns = [
+        'passepartout_openings' => $isMysql ? 'INT UNSIGNED NOT NULL DEFAULT 1' : 'INTEGER NOT NULL DEFAULT 1',
+        'urgent' => $isMysql ? 'TINYINT(1) NOT NULL DEFAULT 0' : 'INTEGER NOT NULL DEFAULT 0',
+        'student_discount' => $isMysql ? 'TINYINT(1) NOT NULL DEFAULT 0' : 'INTEGER NOT NULL DEFAULT 0',
+        'complex_passepartout' => $isMysql ? 'TINYINT(1) NOT NULL DEFAULT 0' : 'INTEGER NOT NULL DEFAULT 0',
+        'extra_services' => $isMysql ? 'TEXT NULL' : 'TEXT',
+        'transport_km' => $isMysql ? 'DECIMAL(10,2) NULL' : 'REAL',
+        'frame_box' => $isMysql ? 'TINYINT(1) NOT NULL DEFAULT 0' : 'INTEGER NOT NULL DEFAULT 0',
+        'frame_nonstandard' => $isMysql ? 'TINYINT(1) NOT NULL DEFAULT 0' : 'INTEGER NOT NULL DEFAULT 0',
+        'frame_shape' => $isMysql ? "VARCHAR(20) NOT NULL DEFAULT ''" : "TEXT NOT NULL DEFAULT ''",
+        'frame_high_complexity' => $isMysql ? 'TINYINT(1) NOT NULL DEFAULT 0' : 'INTEGER NOT NULL DEFAULT 0',
+        'client_passepartout_cutting' => $isMysql ? 'TINYINT(1) NOT NULL DEFAULT 0' : 'INTEGER NOT NULL DEFAULT 0',
+    ];
+    foreach ($orderExtraColumns as $column => $type) {
+        if (!table_has_column($conn, 'orders', $column)) {
+            $conn->exec("ALTER TABLE orders ADD COLUMN {$column} {$type}");
+        }
+    }
+
+    seed_price_list_catalog($conn);
+}
+
+function migrate_legacy_passepartout_stock(PDO $conn): void
+{
+    if (!table_has_column($conn, 'passepartouts', 'stock')) {
+        return;
+    }
+
+    $rows = $conn->query('SELECT id, stock FROM passepartouts WHERE stock > 0')->fetchAll();
+    foreach ($rows as $row) {
+        $passepartoutId = (int)$row['id'];
+        $existing = get_passepartout_sheet_stocks($conn, $passepartoutId);
+        if (!empty($existing)) {
+            continue;
+        }
+
+        $sheetTypeIds = get_passepartout_sheet_type_ids($conn, $passepartoutId);
+        if (empty($sheetTypeIds)) {
+            continue;
+        }
+
+        save_passepartout_sheet_stocks($conn, $passepartoutId, [
+            $sheetTypeIds[0] => (float)$row['stock'],
+        ]);
+    }
 }
 
 function table_has_column(PDO $conn, string $table, string $column): bool

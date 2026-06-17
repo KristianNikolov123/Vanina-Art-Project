@@ -8,16 +8,14 @@ function apply_stock_for_order(PDO $conn, array $order, int $direction): void
     $frameCount = max(1, (int)($order['frame_count'] ?? 1));
 
     if ($width > 0 && $height > 0) {
-        $profileMeters = profile_linear_meters($width, $height, $frameCount);
-        if ($profileMeters > 0) {
-            $profileAmount = round($profileMeters, 2);
-            apply_stock_by_name($conn, 'profiles', trim($order['profile'] ?? ''), $multiplier * $profileAmount);
-
-            $additional = $order['additional_profiles'] ?? '';
-            if ($additional !== '') {
-                foreach (explode(',', $additional) as $name) {
-                    apply_stock_by_name($conn, 'profiles', trim($name), $multiplier * $profileAmount);
+        $profileNames = get_order_profile_names($order);
+        if (!empty($profileNames)) {
+            $stacked = calculate_stacked_profile_material($conn, $width, $height, $frameCount, $profileNames);
+            foreach ($stacked['lines'] as $line) {
+                if (empty($line['found']) || ($line['meters'] ?? 0) <= 0) {
+                    continue;
                 }
+                apply_stock_by_name($conn, 'profiles', $line['name'], $multiplier * $line['meters']);
             }
         }
 
@@ -25,11 +23,32 @@ function apply_stock_for_order(PDO $conn, array $order, int $direction): void
         if ($glassSqm > 0) {
             apply_stock_by_name($conn, 'glasses', trim($order['glass'] ?? ''), $multiplier * round($glassSqm, 2));
         }
+
+        $backSqm = glass_square_meters($width, $height, $frameCount);
+        if ($backSqm > 0) {
+            apply_stock_by_name($conn, 'backs', trim($order['back'] ?? ''), $multiplier * round($backSqm, 2));
+        }
+
+        $hangingStock = resolve_hanging_stock_deduction($conn, $order['hanging'] ?? '', $frameCount, $width, $height);
+        if ($hangingStock) {
+            apply_stock_by_name(
+                $conn,
+                'hanging_options',
+                $hangingStock['stock_name'],
+                $multiplier * $hangingStock['amount']
+            );
+        }
     }
 
-    $passepartoutName = trim($order['passepartout'] ?? '');
-    if ($passepartoutName !== '' && $frameCount > 0) {
-        apply_stock_by_name($conn, 'passepartouts', $passepartoutName, $multiplier * $frameCount);
+    $stockAction = resolve_passepartout_stock_action($conn, $order);
+    if ($stockAction) {
+        apply_passepartout_sheet_stock(
+            $conn,
+            $stockAction['passepartout_id'],
+            $stockAction['sheet_type_id'],
+            $stockAction['usage'],
+            $multiplier
+        );
     }
 }
 
@@ -55,7 +74,7 @@ function apply_stock_by_name(PDO $conn, string $table, string $name, float $chan
         return;
     }
 
-    $allowedTables = ['profiles', 'glasses', 'passepartouts'];
+    $allowedTables = ['profiles', 'glasses', 'backs', 'hanging_options'];
     if (!in_array($table, $allowedTables, true)) {
         return;
     }
