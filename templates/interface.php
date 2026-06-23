@@ -1,27 +1,41 @@
 <div class="container-fluid">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h1>Поръчки</h1>
-        <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addOrderModal">
-            <i class="fas fa-plus"></i> Нова поръчка
-        </button>
+        <div class="d-flex gap-2">
+            <a href="<?= url_for('archives') ?>" class="btn btn-outline-secondary">
+                <i class="fas fa-archive"></i> Архив
+            </a>
+            <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addOrderModal">
+                <i class="fas fa-plus"></i> Нова поръчка
+            </button>
+        </div>
     </div>
 
-    <div class="row mb-4">
-        <div class="col-md-6">
-            <div class="input-group">
+    <div class="orders-toolbar mb-3">
+        <div class="orders-toolbar__left">
+            <div class="orders-toolbar__search input-group input-group-sm">
+                <span class="input-group-text"><i class="fas fa-search"></i></span>
                 <input type="text" id="searchInput" class="form-control" placeholder="Търсене...">
-                <button class="btn btn-outline-secondary" type="button">
-                    <i class="fas fa-search"></i>
-                </button>
             </div>
+            <label class="orders-toolbar__sort" title="Подредба">
+                <i class="fas fa-sort-amount-down"></i>
+                <select id="orderSortSelect" class="form-select form-select-sm" aria-label="Подредба">
+                    <option value="number-desc">№ ↓</option>
+                    <option value="number-asc">№ ↑</option>
+                    <option value="date-desc">Дата ↓</option>
+                    <option value="date-asc">Дата ↑</option>
+                </select>
+            </label>
         </div>
-        <div class="col-md-6">
-            <div class="btn-group" role="group">
-                <button type="button" class="btn btn-outline-primary active" data-filter="all">Всички</button>
-                <button type="button" class="btn btn-outline-success" data-filter="paid">Платени</button>
-                <button type="button" class="btn btn-outline-danger" data-filter="unpaid">Неплатени</button>
-                <button type="button" class="btn btn-outline-info" data-filter="collected">Получени</button>
-                <button type="button" class="btn btn-outline-warning" data-filter="uncollected">Неполучени</button>
+        <div class="orders-toolbar__filters">
+            <button type="button" class="btn btn-outline-secondary orders-toolbar__filter-all active" data-filter="all">Всички</button>
+            <div class="btn-group orders-toolbar__filter-group" role="group" aria-label="Плащане">
+                <button type="button" class="btn btn-outline-success" data-filter="paid" data-filter-group="payment">Платени</button>
+                <button type="button" class="btn btn-outline-danger" data-filter="unpaid" data-filter-group="payment">Неплатени</button>
+            </div>
+            <div class="btn-group orders-toolbar__filter-group" role="group" aria-label="Получаване">
+                <button type="button" class="btn btn-outline-info" data-filter="collected" data-filter-group="collection">Получени</button>
+                <button type="button" class="btn btn-outline-warning" data-filter="uncollected" data-filter-group="collection">Неполучени</button>
             </div>
         </div>
     </div>
@@ -61,40 +75,7 @@
                         <?php
                             $desc = trim($order['description'] ?? '');
                             $descAttr = htmlspecialchars(str_replace(["\r", "\n"], ['\\r', '\\n'], $desc), ENT_QUOTES, 'UTF-8');
-                            $orderData = htmlspecialchars(json_encode([
-                                'order_number' => (int)$order['order_number'],
-                                'sub_order_number' => (int)$order['sub_order_number'],
-                                'date' => $order['date'] ?? '',
-                                'width' => $order['width'],
-                                'height' => $order['height'],
-                                'profile' => $order['profile'] ?? '',
-                                'additional_profiles' => $order['additional_profiles'] ?? '',
-                                'frame_count' => $order['frame_count'] ?? 1,
-                                'glass' => $order['glass'] ?? '',
-                                'back' => $order['back'] ?? '',
-                                'passepartout' => $order['passepartout'] ?? '',
-                                'passepartout_bill_width' => $order['passepartout_bill_width'] ?? null,
-                                'passepartout_bill_height' => $order['passepartout_bill_height'] ?? null,
-                                'hanging' => $order['hanging'] ?? '',
-                                'customer_name' => $order['customer_name'] ?? '',
-                                'price' => $order['price'],
-                                'advance_payment' => $order['advance_payment'],
-                                'discount' => $order['discount'],
-                                'description' => $order['description'] ?? '',
-                                'paid' => (bool)$order['paid'],
-                                'collected' => (bool)$order['collected'],
-                                'passepartout_openings' => $order['passepartout_openings'] ?? 1,
-                                'urgent' => (bool)($order['urgent'] ?? false),
-                                'student_discount' => (bool)($order['student_discount'] ?? false),
-                                'complex_passepartout' => (bool)($order['complex_passepartout'] ?? false),
-                                'extra_services' => $order['extra_services'] ?? '[]',
-                                'transport_km' => $order['transport_km'] ?? '',
-                                'frame_box' => (bool)($order['frame_box'] ?? false),
-                                'frame_nonstandard' => (bool)($order['frame_nonstandard'] ?? false),
-                                'frame_shape' => $order['frame_shape'] ?? '',
-                                'frame_high_complexity' => (bool)($order['frame_high_complexity'] ?? false),
-                                'client_passepartout_cutting' => (bool)($order['client_passepartout_cutting'] ?? false),
-                            ], JSON_UNESCAPED_UNICODE), ENT_QUOTES, 'UTF-8');
+                            $orderData = encode_order_dataset($order);
                             $hasExtras = order_has_extras($order);
                             $extrasLabels = $hasExtras ? format_order_extras_labels($order, $servicesById) : [];
                             $extrasTitle = $hasExtras ? 'Допълнителни опции: ' . implode(', ', $extrasLabels) : '';

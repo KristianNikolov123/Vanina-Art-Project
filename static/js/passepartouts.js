@@ -27,6 +27,15 @@ function editPassepartout(passepartoutId) {
     modal.show();
 }
 
+function openBulkEditPassepartouts(ids) {
+    const form = document.getElementById('bulkEditPassepartoutsForm');
+    fillBulkHiddenIds(form, ids);
+    resetBulkForm('#bulkEditPassepartoutsForm');
+
+    const modal = new bootstrap.Modal(document.getElementById('bulkEditPassepartoutsModal'));
+    modal.show();
+}
+
 document.getElementById('searchInput').addEventListener('input', function(e) {
     const searchText = e.target.value.toLowerCase();
     const rows = document.querySelectorAll('tbody tr');
@@ -41,5 +50,21 @@ document.addEventListener('DOMContentLoaded', function() {
     const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
     tooltipTriggerList.map(function(tooltipTriggerEl) {
         return new bootstrap.Tooltip(tooltipTriggerEl);
+    });
+
+    bindBulkFieldToggles('#bulkEditPassepartoutsForm');
+
+    initBulkSelection({
+        selectAllSelector: '#selectAllPassepartouts',
+        bulkButtonSelector: '#bulkEditPassepartoutsBtn',
+        bulkCountSelector: '#bulkPassepartoutsCount',
+        onBulkClick: openBulkEditPassepartouts,
+    });
+
+    initMultiAddForm({
+        containerSelector: '#passepartoutRowsContainer',
+        addButtonSelector: '#addPassepartoutRowBtn',
+        modalSelector: '#addPassepartoutModal',
+        rowLabelText: 'Паспарту',
     });
 });

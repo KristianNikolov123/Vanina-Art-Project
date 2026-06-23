@@ -5,7 +5,6 @@ function confirmDelete(profileId) {
 }
 
 function editProfile(profileId) {
-    // Get profile data from the table row
     const row = document.querySelector(`tr[data-profile-id="${profileId}"]`);
     const widthText = row.querySelector('.width-cm').textContent.trim();
     const data = {
@@ -21,30 +20,50 @@ function editProfile(profileId) {
     form.querySelector('[name="width_cm"]').value = data.width_cm;
     form.querySelector('[name="price"]').value = data.price;
     form.querySelector('[name="stock"]').value = data.stock;
-
-    // Update form action
     form.action = `${window.BASE_PATH}/edit_profile/${profileId}`;
 
-    // Show the modal
     const modal = new bootstrap.Modal(document.getElementById('editProfileModal'));
     modal.show();
 }
 
-// Search functionality
+function openBulkEditProfiles(ids) {
+    const form = document.getElementById('bulkEditProfilesForm');
+    fillBulkHiddenIds(form, ids);
+    resetBulkForm('#bulkEditProfilesForm');
+
+    const modal = new bootstrap.Modal(document.getElementById('bulkEditProfilesModal'));
+    modal.show();
+}
+
 document.getElementById('searchInput').addEventListener('input', function(e) {
     const searchText = e.target.value.toLowerCase();
     const rows = document.querySelectorAll('tbody tr');
-    
+
     rows.forEach(row => {
         const text = row.textContent.toLowerCase();
         row.style.display = text.includes(searchText) ? '' : 'none';
     });
 });
 
-// Initialize tooltips
 document.addEventListener('DOMContentLoaded', function() {
     const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
     tooltipTriggerList.map(function(tooltipTriggerEl) {
         return new bootstrap.Tooltip(tooltipTriggerEl);
     });
-}); 
+
+    bindBulkFieldToggles('#bulkEditProfilesForm');
+
+    initBulkSelection({
+        selectAllSelector: '#selectAllProfiles',
+        bulkButtonSelector: '#bulkEditProfilesBtn',
+        bulkCountSelector: '#bulkProfilesCount',
+        onBulkClick: openBulkEditProfiles,
+    });
+
+    initMultiAddForm({
+        containerSelector: '#profileRowsContainer',
+        addButtonSelector: '#addProfileRowBtn',
+        modalSelector: '#addProfileModal',
+        rowLabelText: 'Профил',
+    });
+});

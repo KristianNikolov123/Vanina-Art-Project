@@ -111,20 +111,37 @@ if ($uri === '/') {
 
 if ($uri === '/archives') {
     require_login();
+    $conn = get_db_connection();
+    $completed_orders = fetch_completed_orders($conn);
+    $deleted_orders = fetch_deleted_orders($conn);
+    $services = get_all_services($conn);
+    render('archives.php', [
+        'title' => 'Архив',
+        'current_page' => 'archives',
+        'completed_orders' => $completed_orders,
+        'deleted_orders' => $deleted_orders,
+        'services' => $services,
+        'extra_js' => ['order-view.js', 'archives.js'],
+    ]);
+    exit;
+}
+
+if ($uri === '/login_logs') {
+    require_login();
     $user = current_user();
     if (!User::isAdminEmail($user->email)) {
         flash('Нямате достъп до тази страница!', 'danger');
         redirect('/');
     }
     $logs = User::getLoginLogs();
-    render('archives.php', ['title' => 'Архив', 'current_page' => 'archives', 'logs' => $logs]);
+    render('login_logs.php', ['title' => 'Влизания', 'current_page' => 'login_logs', 'logs' => $logs]);
     exit;
 }
 
 if ($uri === '/interface') {
     require_login();
     $conn = get_db_connection();
-    $orders = $conn->query('SELECT * FROM orders ORDER BY order_number, sub_order_number')->fetchAll();
+    $orders = fetch_active_orders($conn);
     $profiles = $conn->query('SELECT id, name, price FROM profiles ORDER BY name')->fetchAll();
     $glasses = $conn->query('SELECT id, name, price FROM glasses ORDER BY name')->fetchAll();
     $passepartouts = $conn->query('SELECT id, name, price FROM passepartouts ORDER BY name')->fetchAll();
@@ -165,7 +182,13 @@ if ($uri === '/profiles') {
     require_login();
     $conn = get_db_connection();
     $profiles = $conn->query('SELECT * FROM profiles')->fetchAll();
-    render('profiles.php', ['title' => 'Профили', 'current_page' => 'profiles', 'profiles' => $profiles, 'extra_js' => 'profiles.js']);
+    render('profiles.php', [
+        'title' => 'Профили',
+        'current_page' => 'profiles',
+        'profiles' => $profiles,
+        'extra_css' => ['profiles.css', 'bulk-edit.css'],
+        'extra_js' => ['bulk-select.js', 'multi-add-rows.js', 'profiles.js'],
+    ]);
     exit;
 }
 
@@ -229,7 +252,8 @@ if ($uri === '/passepartouts') {
         'current_page' => 'passepartouts',
         'passepartouts' => $passepartouts,
         'sheet_types' => $sheetTypes,
-        'extra_js' => 'passepartouts.js',
+        'extra_css' => ['passepartouts.css', 'bulk-edit.css'],
+        'extra_js' => ['bulk-select.js', 'multi-add-rows.js', 'passepartouts.js'],
     ]);
     exit;
 }
@@ -307,6 +331,10 @@ if (preg_match('#^/edit_order/(\d+)$#', $uri, $m) && $method === 'POST') {
             flash('Поръчката не е намерена!', 'danger');
             redirect('/interface');
         }
+        if (!empty($existingOrder['deleted_at'])) {
+            flash('Изтритите поръчки не могат да бъдат редактирани оттук. Възстановете ги от архива.', 'warning');
+            redirect('/archives');
+        }
 
         $order = prepare_order_persistence($conn, $_POST);
 
@@ -342,19 +370,22 @@ if (preg_match('#^/delete_order/(\d+)$#', $uri, $m)) {
             redirect('/interface');
         }
 
+        if (!empty($order['deleted_at'])) {
+            flash('Поръчката вече е в архива.', 'warning');
+            redirect('/archives');
+        }
+
         $restoreStock = isset($_GET['restore_stock']) && $_GET['restore_stock'] === '1';
 
         if (!(bool)$order['collected'] && $restoreStock) {
             $conn->beginTransaction();
             restore_stock_for_order($conn, $order);
-            $stmt = $conn->prepare('DELETE FROM orders WHERE id = ?');
-            $stmt->execute([$orderId]);
+            soft_delete_order($conn, $orderId);
             $conn->commit();
-            flash('Поръчката е изтрита и материалите са върнати в наличност.', 'success');
-        } elseif ((bool)$order['collected']) {
-            $stmt = $conn->prepare('DELETE FROM orders WHERE id = ?');
-            $stmt->execute([$orderId]);
-            flash('Поръчката е изтрита успешно!', 'success');
+            flash('Поръчката е преместена в архива и материалите са върнати в наличност.', 'success');
+        } elseif ((bool)$order['collected'] || $restoreStock) {
+            soft_delete_order($conn, $orderId);
+            flash('Поръчката е преместена в архива.', 'success');
         } else {
             flash('Изтриването е отменено. Материалите не са върнати в наличност.', 'warning');
         }
@@ -365,6 +396,26 @@ if (preg_match('#^/delete_order/(\d+)$#', $uri, $m)) {
         flash('Грешка при изтриване на поръчка: ' . $e->getMessage(), 'danger');
     }
     redirect('/interface');
+}
+
+if (preg_match('#^/restore_order/(\d+)$#', $uri, $m)) {
+    require_login();
+    $orderId = (int)$m[1];
+    $conn = get_db_connection();
+    $stmt = $conn->prepare('SELECT * FROM orders WHERE id = ?');
+    $stmt->execute([$orderId]);
+    $order = $stmt->fetch();
+    if (!$order || empty($order['deleted_at'])) {
+        flash('Поръчката не е намерена в архива на изтритите.', 'danger');
+        redirect('/archives');
+    }
+    if (restore_archived_order($conn, $orderId)) {
+        $destination = order_is_completed($order) ? 'архива на завършените' : 'списъка „Поръчки“';
+        flash("Поръчката е възстановена в {$destination}.", 'success');
+    } else {
+        flash('Грешка при възстановяване на поръчката.', 'danger');
+    }
+    redirect('/archives');
 }
 
 if (preg_match('#^/add_sub_order/(\d+)$#', $uri, $m) && $method === 'POST') {
@@ -414,13 +465,16 @@ if (preg_match('#^/add_sub_order/(\d+)$#', $uri, $m) && $method === 'POST') {
 
 if ($uri === '/add_profile' && $method === 'POST') {
     require_login();
+    $rows = parse_profile_rows_from_post();
+    if (empty($rows)) {
+        flash('Добавете поне един профил с име.', 'warning');
+        redirect('/profiles');
+    }
+
     $conn = get_db_connection();
     try {
-        $widthCm = isset($_POST['width_cm']) && $_POST['width_cm'] !== '' ? $_POST['width_cm'] : null;
-        $profileType = $_POST['profile_type'] ?? 'wood';
-        $stmt = $conn->prepare('INSERT INTO profiles (name, price, stock, width_cm, profile_type) VALUES (?, ?, ?, ?, ?)');
-        $stmt->execute([$_POST['name'], $_POST['price'], $_POST['stock'], $widthCm, $profileType]);
-        flash('Профилът е добавен успешно!', 'success');
+        $result = create_profiles_bulk($conn, $rows);
+        flash_bulk_create_profiles_result($result);
     } catch (Exception $e) {
         flash('Грешка при добавяне на профил: ' . $e->getMessage(), 'danger');
     }
@@ -451,6 +505,39 @@ if (preg_match('#^/delete_profile/(\d+)$#', $uri, $m)) {
         flash('Профилът е изтрит успешно!', 'success');
     } catch (Exception $e) {
         flash('Грешка при изтриване на профил: ' . $e->getMessage(), 'danger');
+    }
+    redirect('/profiles');
+}
+
+if ($uri === '/bulk_edit_profiles' && $method === 'POST') {
+    require_login();
+    $ids = parse_bulk_ids_from_post();
+    if (empty($ids)) {
+        flash('Не са избрани профили за групово редактиране.', 'warning');
+        redirect('/profiles');
+    }
+
+    $hasChanges = !empty($_POST['apply_price'])
+        || !empty($_POST['apply_stock'])
+        || !empty($_POST['apply_width_cm'])
+        || !empty($_POST['apply_profile_type']);
+
+    if (!$hasChanges) {
+        flash('Маркирайте поне едно поле за промяна.', 'warning');
+        redirect('/profiles');
+    }
+
+    $conn = get_db_connection();
+    try {
+        $conn->beginTransaction();
+        $updated = bulk_update_profiles($conn, $ids, $_POST);
+        $conn->commit();
+        flash("Обновени са {$updated} профила.", 'success');
+    } catch (Exception $e) {
+        if ($conn->inTransaction()) {
+            $conn->rollBack();
+        }
+        flash('Грешка при групово редактиране: ' . $e->getMessage(), 'danger');
     }
     redirect('/profiles');
 }
@@ -500,19 +587,17 @@ if (preg_match('#^/delete_glass/(\d+)$#', $uri, $m)) {
 
 if ($uri === '/add_passepartout' && $method === 'POST') {
     require_login();
+    $rows = parse_passepartout_rows_from_post();
+    if (empty($rows)) {
+        flash('Добавете поне едно паспарту с номер.', 'warning');
+        redirect('/passepartouts');
+    }
+
     $conn = get_db_connection();
     try {
-        $conn->beginTransaction();
-        $stmt = $conn->prepare('INSERT INTO passepartouts (name, price, stock) VALUES (?, ?, 0)');
-        $stmt->execute([$_POST['name'], $_POST['price']]);
-        $passepartoutId = (int)$conn->lastInsertId();
-        save_passepartout_sheet_stocks($conn, $passepartoutId, parse_passepartout_sheet_stocks_from_post());
-        $conn->commit();
-        flash('Паспартуто е добавено успешно!', 'success');
+        $result = create_passepartouts_bulk($conn, $rows);
+        flash_bulk_create_passepartouts_result($result);
     } catch (Exception $e) {
-        if ($conn->inTransaction()) {
-            $conn->rollBack();
-        }
         flash('Грешка при добавяне на паспарту: ' . $e->getMessage(), 'danger');
     }
     redirect('/passepartouts');
@@ -547,6 +632,38 @@ if (preg_match('#^/delete_passepartout/(\d+)$#', $uri, $m)) {
         flash('Паспартуто е изтрито успешно!', 'success');
     } catch (Exception $e) {
         flash('Грешка при изтриване на паспарту: ' . $e->getMessage(), 'danger');
+    }
+    redirect('/passepartouts');
+}
+
+if ($uri === '/bulk_edit_passepartouts' && $method === 'POST') {
+    require_login();
+    $ids = parse_bulk_ids_from_post();
+    if (empty($ids)) {
+        flash('Не са избрани паспартута за групово редактиране.', 'warning');
+        redirect('/passepartouts');
+    }
+
+    $applySheetStock = $_POST['apply_sheet_stock'] ?? [];
+    $hasSheetChanges = is_array($applySheetStock) && count(array_filter($applySheetStock)) > 0;
+    $hasChanges = !empty($_POST['apply_price']) || $hasSheetChanges;
+
+    if (!$hasChanges) {
+        flash('Маркирайте поне едно поле за промяна.', 'warning');
+        redirect('/passepartouts');
+    }
+
+    $conn = get_db_connection();
+    try {
+        $conn->beginTransaction();
+        $updated = bulk_update_passepartouts($conn, $ids, $_POST);
+        $conn->commit();
+        flash("Обновени са {$updated} паспартута.", 'success');
+    } catch (Exception $e) {
+        if ($conn->inTransaction()) {
+            $conn->rollBack();
+        }
+        flash('Грешка при групово редактиране: ' . $e->getMessage(), 'danger');
     }
     redirect('/passepartouts');
 }

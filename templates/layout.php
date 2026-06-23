@@ -7,9 +7,12 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <link href="<?= static_url('css/glasses.css') ?>" rel="stylesheet">
-    <?php if (!empty($extra_css)): ?>
-    <link rel="stylesheet" href="<?= static_url('css/' . $extra_css) ?>">
-    <?php endif; ?>
+    <?php
+    $extraCssFiles = is_array($extra_css ?? null) ? $extra_css : (($extra_css ?? '') !== '' ? [$extra_css] : []);
+    foreach ($extraCssFiles as $cssFile):
+    ?>
+    <link rel="stylesheet" href="<?= static_url('css/' . $cssFile) ?>">
+    <?php endforeach; ?>
 </head>
 <body>
     <nav class="navbar navbar-expand-lg navbar-dark">
@@ -49,10 +52,17 @@
                             <li><a class="dropdown-item" href="<?= url_for('services') ?>"><i class="fas fa-tools me-2"></i>Услуги</a></li>
                         </ul>
                     </li>
-                    <?php if ($current_user && User::isAdminEmail($current_user->email)): ?>
+                    <?php if ($current_user): ?>
                     <li class="nav-item">
                         <a class="nav-link <?= $current_page === 'archives' ? 'active' : '' ?>" href="<?= url_for('archives') ?>">
                             <i class="fas fa-archive"></i> Архив
+                        </a>
+                    </li>
+                    <?php endif; ?>
+                    <?php if ($current_user && User::isAdminEmail($current_user->email)): ?>
+                    <li class="nav-item">
+                        <a class="nav-link <?= $current_page === 'login_logs' ? 'active' : '' ?>" href="<?= url_for('login_logs') ?>">
+                            <i class="fas fa-history"></i> Влизания
                         </a>
                     </li>
                     <?php endif; ?>
@@ -108,8 +118,11 @@
 
     <script>window.BASE_PATH = '<?= BASE_PATH ?>';</script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <?php if (!empty($extra_js)): ?>
-    <script src="<?= static_url('js/' . $extra_js) ?>"></script>
-    <?php endif; ?>
+    <?php
+    $extraJsFiles = is_array($extra_js ?? null) ? $extra_js : (($extra_js ?? '') !== '' ? [$extra_js] : []);
+    foreach ($extraJsFiles as $jsFile):
+    ?>
+    <script src="<?= static_url('js/' . $jsFile) ?>"></script>
+    <?php endforeach; ?>
 </body>
 </html>

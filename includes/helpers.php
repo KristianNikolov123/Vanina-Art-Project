@@ -8,6 +8,7 @@ function url_for(string $route, array $params = []): string
         'signup' => '/signup',
         'logout' => '/logout',
         'archives' => '/archives',
+        'login_logs' => '/login_logs',
         'interface' => '/interface',
         'warehouse' => '/warehouse',
         'profiles' => '/profiles',
@@ -23,6 +24,8 @@ function url_for(string $route, array $params = []): string
         'add_profile' => '/add_profile',
         'add_glass' => '/add_glass',
         'add_passepartout' => '/add_passepartout',
+        'bulk_edit_profiles' => '/bulk_edit_profiles',
+        'bulk_edit_passepartouts' => '/bulk_edit_passepartouts',
         'verify_email' => '/verify',
     ];
 
@@ -228,6 +231,102 @@ function format_order_extras_labels(array $order, array $servicesById = []): arr
     return $labels;
 }
 
+function order_is_completed(array $order): bool
+{
+    return !empty($order['paid']) && !empty($order['collected']);
+}
+
+function order_view_data(array $order): array
+{
+    return [
+        'order_number' => (int)$order['order_number'],
+        'sub_order_number' => (int)$order['sub_order_number'],
+        'date' => $order['date'] ?? '',
+        'width' => $order['width'],
+        'height' => $order['height'],
+        'profile' => $order['profile'] ?? '',
+        'additional_profiles' => $order['additional_profiles'] ?? '',
+        'frame_count' => $order['frame_count'] ?? 1,
+        'glass' => $order['glass'] ?? '',
+        'back' => $order['back'] ?? '',
+        'passepartout' => $order['passepartout'] ?? '',
+        'passepartout_bill_width' => $order['passepartout_bill_width'] ?? null,
+        'passepartout_bill_height' => $order['passepartout_bill_height'] ?? null,
+        'hanging' => $order['hanging'] ?? '',
+        'customer_name' => $order['customer_name'] ?? '',
+        'price' => $order['price'],
+        'advance_payment' => $order['advance_payment'],
+        'discount' => $order['discount'],
+        'description' => $order['description'] ?? '',
+        'paid' => (bool)$order['paid'],
+        'collected' => (bool)$order['collected'],
+        'passepartout_openings' => $order['passepartout_openings'] ?? 1,
+        'urgent' => (bool)($order['urgent'] ?? false),
+        'student_discount' => (bool)($order['student_discount'] ?? false),
+        'complex_passepartout' => (bool)($order['complex_passepartout'] ?? false),
+        'extra_services' => $order['extra_services'] ?? '[]',
+        'transport_km' => $order['transport_km'] ?? '',
+        'frame_box' => (bool)($order['frame_box'] ?? false),
+        'frame_nonstandard' => (bool)($order['frame_nonstandard'] ?? false),
+        'frame_shape' => $order['frame_shape'] ?? '',
+        'frame_high_complexity' => (bool)($order['frame_high_complexity'] ?? false),
+        'client_passepartout_cutting' => (bool)($order['client_passepartout_cutting'] ?? false),
+    ];
+}
+
+function encode_order_dataset(array $order): string
+{
+    return htmlspecialchars(
+        json_encode(order_view_data($order), JSON_UNESCAPED_UNICODE),
+        ENT_QUOTES,
+        'UTF-8'
+    );
+}
+
+function fetch_active_orders(PDO $conn): array
+{
+    return $conn->query('
+        SELECT * FROM orders
+        WHERE deleted_at IS NULL
+          AND (paid = 0 OR collected = 0)
+        ORDER BY order_number DESC, sub_order_number
+    ')->fetchAll();
+}
+
+function fetch_completed_orders(PDO $conn): array
+{
+    return $conn->query('
+        SELECT * FROM orders
+        WHERE deleted_at IS NULL
+          AND paid = 1
+          AND collected = 1
+        ORDER BY order_number DESC, sub_order_number
+    ')->fetchAll();
+}
+
+function fetch_deleted_orders(PDO $conn): array
+{
+    return $conn->query('
+        SELECT * FROM orders
+        WHERE deleted_at IS NOT NULL
+        ORDER BY deleted_at DESC, order_number DESC, sub_order_number
+    ')->fetchAll();
+}
+
+function soft_delete_order(PDO $conn, int $orderId): void
+{
+    $stmt = $conn->prepare('UPDATE orders SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL');
+    $stmt->execute([date('Y-m-d H:i:s'), $orderId]);
+}
+
+function restore_archived_order(PDO $conn, int $orderId): bool
+{
+    $stmt = $conn->prepare('UPDATE orders SET deleted_at = NULL WHERE id = ? AND deleted_at IS NOT NULL');
+    $stmt->execute([$orderId]);
+
+    return $stmt->rowCount() > 0;
+}
+
 function full_url(string $path): string
 {
     $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
@@ -251,6 +350,315 @@ function parse_passepartout_sheet_stocks_from_post(): array
     }
 
     return $stocks;
+}
+
+function parse_profile_rows_from_post(): array
+{
+    $rows = $_POST['profile_rows'] ?? [];
+    if (!is_array($rows)) {
+        return [];
+    }
+
+    $parsed = [];
+    foreach ($rows as $row) {
+        if (!is_array($row)) {
+            continue;
+        }
+
+        $name = trim($row['name'] ?? '');
+        if ($name === '') {
+            continue;
+        }
+
+        $parsed[] = [
+            'name' => $name,
+            'price' => $row['price'] ?? 0,
+            'stock' => $row['stock'] ?? 0,
+            'width_cm' => isset($row['width_cm']) && $row['width_cm'] !== '' ? $row['width_cm'] : null,
+            'profile_type' => $row['profile_type'] ?? 'wood',
+        ];
+    }
+
+    return $parsed;
+}
+
+function parse_passepartout_rows_from_post(): array
+{
+    $rows = $_POST['passepartout_rows'] ?? [];
+    if (!is_array($rows)) {
+        return [];
+    }
+
+    $parsed = [];
+    foreach ($rows as $row) {
+        if (!is_array($row)) {
+            continue;
+        }
+
+        $name = trim($row['name'] ?? '');
+        if ($name === '') {
+            continue;
+        }
+
+        $sheetStock = [];
+        if (isset($row['sheet_stock']) && is_array($row['sheet_stock'])) {
+            foreach ($row['sheet_stock'] as $sheetTypeId => $stock) {
+                $sheetTypeId = (int)$sheetTypeId;
+                if ($sheetTypeId > 0 && $stock !== '') {
+                    $sheetStock[$sheetTypeId] = (float)$stock;
+                }
+            }
+        }
+
+        $parsed[] = [
+            'name' => $name,
+            'price' => $row['price'] ?? 0,
+            'sheet_stock' => $sheetStock,
+        ];
+    }
+
+    return $parsed;
+}
+
+function is_duplicate_key_exception(Throwable $e): bool
+{
+    if (!$e instanceof PDOException) {
+        return false;
+    }
+
+    $sqlState = $e->errorInfo[0] ?? '';
+    $message = $e->getMessage();
+
+    if ($sqlState === '23000') {
+        return true;
+    }
+
+    return stripos($message, 'UNIQUE constraint failed') !== false
+        || stripos($message, 'Duplicate entry') !== false;
+}
+
+function create_profiles_bulk(PDO $conn, array $rows): array
+{
+    $allowedTypes = ['wood', 'metal', 'client_material'];
+    $stmt = $conn->prepare('INSERT INTO profiles (name, price, stock, width_cm, profile_type) VALUES (?, ?, ?, ?, ?)');
+    $added = [];
+    $skipped = [];
+
+    foreach ($rows as $row) {
+        $profileType = in_array($row['profile_type'], $allowedTypes, true) ? $row['profile_type'] : 'wood';
+
+        try {
+            $stmt->execute([
+                $row['name'],
+                $row['price'],
+                $row['stock'],
+                $row['width_cm'],
+                $profileType,
+            ]);
+            $added[] = $row['name'];
+        } catch (PDOException $e) {
+            if (is_duplicate_key_exception($e)) {
+                $skipped[] = $row['name'];
+                continue;
+            }
+            throw $e;
+        }
+    }
+
+    return ['added' => $added, 'skipped' => $skipped];
+}
+
+function create_passepartouts_bulk(PDO $conn, array $rows): array
+{
+    $stmt = $conn->prepare('INSERT INTO passepartouts (name, price, stock) VALUES (?, ?, 0)');
+    $added = [];
+    $skipped = [];
+
+    foreach ($rows as $row) {
+        try {
+            $stmt->execute([$row['name'], $row['price']]);
+            $passepartoutId = (int)$conn->lastInsertId();
+            save_passepartout_sheet_stocks($conn, $passepartoutId, $row['sheet_stock']);
+            $added[] = $row['name'];
+        } catch (PDOException $e) {
+            if (is_duplicate_key_exception($e)) {
+                $skipped[] = $row['name'];
+                continue;
+            }
+            throw $e;
+        }
+    }
+
+    return ['added' => $added, 'skipped' => $skipped];
+}
+
+function flash_bulk_create_profiles_result(array $result): void
+{
+    $added = $result['added'];
+    $skipped = $result['skipped'];
+    $addedCount = count($added);
+    $skippedCount = count($skipped);
+
+    if ($addedCount > 0 && $skippedCount === 0) {
+        flash(
+            $addedCount === 1 ? 'Профилът е добавен успешно!' : "Добавени са {$addedCount} профила.",
+            'success'
+        );
+        return;
+    }
+
+    if ($addedCount > 0 && $skippedCount > 0) {
+        flash(
+            "Добавени са {$addedCount} профила. Пропуснати (вече съществуват): " . implode(', ', $skipped),
+            'warning'
+        );
+        return;
+    }
+
+    flash(
+        'Нищо не беше добавено. Профили с вече съществуващо име: ' . implode(', ', $skipped),
+        'danger'
+    );
+}
+
+function flash_bulk_create_passepartouts_result(array $result): void
+{
+    $added = $result['added'];
+    $skipped = $result['skipped'];
+    $addedCount = count($added);
+    $skippedCount = count($skipped);
+
+    if ($addedCount > 0 && $skippedCount === 0) {
+        flash(
+            $addedCount === 1 ? 'Паспартуто е добавено успешно!' : "Добавени са {$addedCount} паспартута.",
+            'success'
+        );
+        return;
+    }
+
+    if ($addedCount > 0 && $skippedCount > 0) {
+        flash(
+            "Добавени са {$addedCount} паспартута. Пропуснати (вече съществуват): " . implode(', ', $skipped),
+            'warning'
+        );
+        return;
+    }
+
+    flash(
+        'Нищо не беше добавено. Паспарту с вече съществуващ номер: ' . implode(', ', $skipped),
+        'danger'
+    );
+}
+
+function parse_bulk_ids_from_post(): array
+{
+    $ids = $_POST['ids'] ?? [];
+    if (!is_array($ids)) {
+        return [];
+    }
+
+    return array_values(array_unique(array_filter(array_map('intval', $ids), fn($id) => $id > 0)));
+}
+
+function apply_bulk_numeric_change(float $current, string $mode, float $value): float
+{
+    if ($mode === 'add') {
+        return max(0, $current + $value);
+    }
+
+    return max(0, $value);
+}
+
+function bulk_update_profiles(PDO $conn, array $ids, array $post): int
+{
+    $updated = 0;
+
+    foreach ($ids as $id) {
+        $stmt = $conn->prepare('SELECT * FROM profiles WHERE id = ?');
+        $stmt->execute([$id]);
+        $profile = $stmt->fetch();
+        if (!$profile) {
+            continue;
+        }
+
+        $price = (float)$profile['price'];
+        $stock = (float)$profile['stock'];
+        $widthCm = $profile['width_cm'];
+        $profileType = $profile['profile_type'] ?? 'wood';
+
+        if (!empty($post['apply_price']) && ($post['price'] ?? '') !== '') {
+            $price = (float)$post['price'];
+        }
+
+        if (!empty($post['apply_stock']) && ($post['stock'] ?? '') !== '') {
+            $stock = apply_bulk_numeric_change($stock, $post['stock_mode'] ?? 'set', (float)$post['stock']);
+        }
+
+        if (!empty($post['apply_width_cm'])) {
+            $widthCm = ($post['width_cm'] ?? '') !== '' ? (float)$post['width_cm'] : null;
+        }
+
+        if (!empty($post['apply_profile_type']) && ($post['profile_type'] ?? '') !== '') {
+            $profileType = $post['profile_type'];
+        }
+
+        $update = $conn->prepare('UPDATE profiles SET price = ?, stock = ?, width_cm = ?, profile_type = ? WHERE id = ?');
+        $update->execute([$price, $stock, $widthCm, $profileType, $id]);
+        $updated++;
+    }
+
+    return $updated;
+}
+
+function bulk_update_passepartouts(PDO $conn, array $ids, array $post): int
+{
+    $updated = 0;
+    $applySheetStock = $post['apply_sheet_stock'] ?? [];
+    $sheetStockValues = $post['sheet_stock'] ?? [];
+    $sheetStockModes = $post['sheet_stock_mode'] ?? [];
+
+    foreach ($ids as $id) {
+        $stmt = $conn->prepare('SELECT * FROM passepartouts WHERE id = ?');
+        $stmt->execute([$id]);
+        $passepartout = $stmt->fetch();
+        if (!$passepartout) {
+            continue;
+        }
+
+        if (!empty($post['apply_price']) && ($post['price'] ?? '') !== '') {
+            $priceStmt = $conn->prepare('UPDATE passepartouts SET price = ? WHERE id = ?');
+            $priceStmt->execute([(float)$post['price'], $id]);
+        }
+
+        if (is_array($applySheetStock) && !empty($applySheetStock)) {
+            $stocks = get_passepartout_sheet_stocks($conn, $id);
+            $changed = false;
+
+            foreach ($applySheetStock as $sheetTypeId => $enabled) {
+                if (!$enabled || ($sheetStockValues[$sheetTypeId] ?? '') === '') {
+                    continue;
+                }
+
+                $sheetTypeId = (int)$sheetTypeId;
+                if ($sheetTypeId <= 0) {
+                    continue;
+                }
+
+                $current = (float)($stocks[$sheetTypeId] ?? 0);
+                $mode = $sheetStockModes[$sheetTypeId] ?? 'set';
+                $stocks[$sheetTypeId] = apply_bulk_numeric_change($current, $mode, (float)$sheetStockValues[$sheetTypeId]);
+                $changed = true;
+            }
+
+            if ($changed) {
+                save_passepartout_sheet_stocks($conn, $id, $stocks);
+            }
+        }
+
+        $updated++;
+    }
+
+    return $updated;
 }
 
 function get_additional_profiles(): ?string

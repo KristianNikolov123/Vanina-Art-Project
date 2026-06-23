@@ -34,6 +34,109 @@ function appendAdditionalProfileField(container, value) {
     container.appendChild(div);
 }
 
+function clearAddOrderForm() {
+    const form = document.getElementById('addOrderForm');
+    if (!form) return;
+
+    form.reset();
+
+    const profilesContainer = document.getElementById('additionalProfiles');
+    if (profilesContainer) profilesContainer.innerHTML = '';
+
+    form.querySelectorAll('select').forEach((select) => {
+        select.selectedIndex = 0;
+    });
+
+    form.querySelectorAll('input[type="checkbox"]').forEach((checkbox) => {
+        checkbox.checked = false;
+    });
+
+    const frameCount = form.querySelector('[name="frame_count"]');
+    if (frameCount) frameCount.value = '1';
+
+    const openings = form.querySelector('[name="passepartout_openings"]');
+    if (openings) openings.value = '1';
+
+    const priceInput = form.querySelector('[name="price"]');
+    if (priceInput) priceInput.value = '';
+
+    const preview = form.querySelector('.order-pricing-preview');
+    if (preview) {
+        preview.style.display = 'none';
+        preview.innerHTML = '';
+    }
+
+    expandOrderExtrasIfNeeded(form, null);
+    form.dataset.autoPrice = '1';
+}
+
+function getOrderRowSortKeys(row) {
+    const data = row.dataset.order ? JSON.parse(row.dataset.order) : {};
+    const number = (Number(data.order_number) || 0) + (Number(data.sub_order_number) || 0) / 100;
+    const date = data.date || '';
+    return { number, date };
+}
+
+function sortOrderRows(mode) {
+    const tbody = document.querySelector('.orders-container tbody');
+    if (!tbody) return;
+
+    const rows = Array.from(tbody.querySelectorAll('.order-row'));
+    rows.sort((a, b) => {
+        const ka = getOrderRowSortKeys(a);
+        const kb = getOrderRowSortKeys(b);
+
+        switch (mode) {
+            case 'number-asc':
+                return ka.number - kb.number || ka.date.localeCompare(kb.date);
+            case 'number-desc':
+                return kb.number - ka.number || kb.date.localeCompare(ka.date);
+            case 'date-asc':
+                return ka.date.localeCompare(kb.date) || ka.number - kb.number;
+            case 'date-desc':
+                return kb.date.localeCompare(ka.date) || kb.number - ka.number;
+            default:
+                return kb.number - ka.number;
+        }
+    });
+
+    rows.forEach((row) => tbody.appendChild(row));
+}
+
+function applyOrderRowVisibility() {
+    const searchText = (document.getElementById('searchInput')?.value || '').toLowerCase();
+    const paymentFilter = document.querySelector('[data-filter-group="payment"].active')?.dataset.filter;
+    const collectionFilter = document.querySelector('[data-filter-group="collection"].active')?.dataset.filter;
+
+    document.querySelectorAll('.order-row').forEach((row) => {
+        const text = row.textContent.toLowerCase();
+        const matchesSearch = !searchText || text.includes(searchText);
+
+        const order = row.dataset.order ? JSON.parse(row.dataset.order) : null;
+        const paid = order ? Boolean(order.paid) : row.querySelector('.badge.bg-success') !== null;
+        const collected = order ? Boolean(order.collected) : row.querySelector('.badge.bg-info') !== null;
+
+        let matchesPayment = true;
+        if (paymentFilter === 'paid') matchesPayment = paid;
+        if (paymentFilter === 'unpaid') matchesPayment = !paid;
+
+        let matchesCollection = true;
+        if (collectionFilter === 'collected') matchesCollection = collected;
+        if (collectionFilter === 'uncollected') matchesCollection = !collected;
+
+        row.style.display = matchesSearch && matchesPayment && matchesCollection ? '' : 'none';
+    });
+}
+
+function syncStatusFilterAllButton() {
+    const allButton = document.querySelector('.orders-toolbar__filter-all');
+    if (!allButton) return;
+
+    const hasPayment = document.querySelector('[data-filter-group="payment"].active');
+    const hasCollection = document.querySelector('[data-filter-group="collection"].active');
+    allButton.classList.toggle('active', !hasPayment && !hasCollection);
+}
+
 // Function to add a sub-order
 function addSubOrder(orderId) {
     const form = document.getElementById('addSubOrderForm');
@@ -464,13 +567,13 @@ function confirmDelete(orderId) {
         : row && row.querySelector('.badge.bg-info') !== null;
 
     if (!collected) {
-        if (confirm('Поръчката не е маркирана като получена.\n\nМатериалите ще бъдат върнати в наличност при изтриване.\n\nСигурни ли сте, че искате да изтриете?')) {
+        if (confirm('Поръчката не е маркирана като получена.\n\nМатериалите ще бъдат върнати в наличност. Поръчката ще отиде в архива на изтритите.\n\nСигурни ли сте?')) {
             window.location.href = `${window.BASE_PATH}/delete_order/${orderId}?restore_stock=1`;
         }
         return;
     }
 
-    if (confirm('Поръчката е маркирана като получена. Материалите няма да бъдат върнати в наличност.\n\nСигурни ли сте, че искате да изтриете?')) {
+    if (confirm('Поръчката е маркирана като получена. Материалите няма да бъдат върнати. Поръчката ще отиде в архива на изтритите.\n\nСигурни ли сте?')) {
         window.location.href = `${window.BASE_PATH}/delete_order/${orderId}`;
     }
 }
@@ -494,43 +597,42 @@ document.addEventListener('DOMContentLoaded', function () {
 
     const searchInput = document.getElementById('searchInput');
     if (searchInput) {
-        searchInput.addEventListener('input', function() {
-            const searchText = this.value.toLowerCase();
-            const rows = document.querySelectorAll('.order-row');
+        searchInput.addEventListener('input', applyOrderRowVisibility);
+    }
 
-            rows.forEach(row => {
-                const text = row.textContent.toLowerCase();
-                row.style.display = text.includes(searchText) ? '' : 'none';
-            });
+    const sortSelect = document.getElementById('orderSortSelect');
+    if (sortSelect) {
+        sortSelect.addEventListener('change', function () {
+            sortOrderRows(this.value);
+            applyOrderRowVisibility();
+        });
+        sortOrderRows(sortSelect.value);
+    }
+
+    const allFilterButton = document.querySelector('.orders-toolbar__filter-all');
+    if (allFilterButton) {
+        allFilterButton.addEventListener('click', function () {
+            document.querySelectorAll('[data-filter-group]').forEach((btn) => btn.classList.remove('active'));
+            this.classList.add('active');
+            applyOrderRowVisibility();
         });
     }
 
-    const filterButtons = document.querySelectorAll('[data-filter]');
-    filterButtons.forEach(button => {
-        button.addEventListener('click', function() {
-            filterButtons.forEach(btn => btn.classList.remove('active'));
-            this.classList.add('active');
+    document.querySelectorAll('[data-filter-group]').forEach((button) => {
+        button.addEventListener('click', function () {
+            const group = this.dataset.filterGroup;
+            const wasActive = this.classList.contains('active');
 
-            const filter = this.dataset.filter;
-            const rows = document.querySelectorAll('.order-row');
-
-            rows.forEach(row => {
-                const order = row.dataset.order ? JSON.parse(row.dataset.order) : null;
-                const paid = order ? Boolean(order.paid) : row.querySelector('.badge.bg-success') !== null;
-                const collected = order ? Boolean(order.collected) : row.querySelector('.badge.bg-info') !== null;
-                const shouldShow = (() => {
-                    switch(filter) {
-                        case 'all': return true;
-                        case 'paid': return paid;
-                        case 'unpaid': return !paid;
-                        case 'collected': return collected;
-                        case 'uncollected': return !collected;
-                        default: return true;
-                    }
-                })();
-
-                row.style.display = shouldShow ? '' : 'none';
+            document.querySelectorAll(`[data-filter-group="${group}"]`).forEach((btn) => {
+                btn.classList.remove('active');
             });
+
+            if (!wasActive) {
+                this.classList.add('active');
+            }
+
+            syncStatusFilterAllButton();
+            applyOrderRowVisibility();
         });
     });
 
