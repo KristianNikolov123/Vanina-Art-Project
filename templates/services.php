@@ -39,6 +39,53 @@ $unitLabels = ['piece' => 'бр.', 'sqm' => 'кв.м.', 'lm' => 'л.м.', 'km' =
 </div>
 <?php endforeach; ?>
 
+<?php if (!empty($passepartout_price_kinds)): ?>
+<div class="card mb-4">
+    <div class="card-header">
+        <strong>Видове паспарту (ценоразпис)</strong>
+        <span class="badge bg-secondary">справочно</span>
+    </div>
+    <div class="card-body">
+        <p class="text-muted small mb-3">
+            Всяко паспарту в <strong>Склад → Паспарту</strong> получава № (цвят/артикул) и се задава към един от тези
+            <strong>видове цени</strong>. При поръчка цената се определя от фактурирания размер на изрязване, не от €/кв.м.
+            Отделни артикули с нестандартни цени се въвеждат с опция <strong>Ръчно</strong>.
+        </p>
+        <div class="table-responsive">
+            <table class="table table-sm table-bordered mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Вид</th>
+                        <th>Лист</th>
+                        <th>Описание</th>
+                        <th>Цени по размер (€/бр.)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($passepartout_price_kinds as $kind): ?>
+                    <tr>
+                        <td class="fw-semibold text-nowrap"><?= e($kind['label']) ?></td>
+                        <td class="text-nowrap"><?= e($kind['sheet_label']) ?></td>
+                        <td><?= e($kind['summary']) ?></td>
+                        <td>
+                            <ul class="list-unstyled mb-0 small">
+                                <?php foreach ($kind['tiers'] as $tier): ?>
+                                <li>
+                                    <span class="text-muted"><?= e($tier['size_label']) ?>:</span>
+                                    <strong><?= number_format((float)$tier['price'], 2) ?> €</strong>
+                                </li>
+                                <?php endforeach; ?>
+                            </ul>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
+
 <?php if (!empty($services)): ?>
 <div class="card mb-4">
     <div class="card-header"><strong>Допълнителни услуги</strong> <span class="badge bg-primary">по избор в поръчка</span></div>
@@ -73,7 +120,7 @@ $unitLabels = ['piece' => 'бр.', 'sqm' => 'кв.м.', 'lm' => 'л.м.', 'km' =
         <ul class="mb-0">
             <li><strong>Широк профил</strong> (≥10 см) — страна над 2.5 м се фактурира като 3 м</li>
             <li><strong>Метален профил</strong> — 5.07 €/бр. труд; <strong>материал на клиент</strong> — 15.27 €/бр.</li>
-            <li><strong>Паспарту</strong> — всеки допълнителен отвор +1.22 €; сложно рязане +50% (мин. 6.10 €/бр.)</li>
+            <li><strong>Паспарту</strong> — 6 ценови вида (виж таблицата по-горе) + всеки допълнителен отвор +1.22 €; сложно рязане +50% (мин. 6.10 €/бр.)</li>
             <li><strong>Отстъпки</strong> — автоматично −5% (над 255 €) / −10% (над 510 €); ученик −10%</li>
             <li><strong>Спешна</strong> — +50% върху сумата след отстъпките</li>
         </ul>

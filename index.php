@@ -233,6 +233,7 @@ if ($uri === '/services') {
         'current_page' => 'services',
         'pricing_settings' => $pricing_settings,
         'services' => $services,
+        'passepartout_price_kinds' => get_passepartout_price_kinds_for_display(),
     ]);
     exit;
 }
@@ -252,6 +253,8 @@ if ($uri === '/passepartouts') {
         'current_page' => 'passepartouts',
         'passepartouts' => $passepartouts,
         'sheet_types' => $sheetTypes,
+        'passepartout_price_kinds' => get_passepartout_price_kind_definitions(),
+        'passepartout_tier_labels' => get_passepartout_tier_scheme_labels(),
         'extra_css' => ['passepartouts.css', 'bulk-edit.css'],
         'extra_js' => ['bulk-select.js', 'multi-add-rows.js', 'passepartouts.js'],
     ]);
@@ -609,8 +612,9 @@ if (preg_match('#^/edit_passepartout/(\d+)$#', $uri, $m) && $method === 'POST') 
     try {
         $passepartoutId = (int)$m[1];
         $conn->beginTransaction();
-        $stmt = $conn->prepare('UPDATE passepartouts SET name = ?, price = ? WHERE id = ?');
-        $stmt->execute([$_POST['name'], $_POST['price'], $passepartoutId]);
+        $stmt = $conn->prepare('UPDATE passepartouts SET name = ? WHERE id = ?');
+        $stmt->execute([$_POST['name'], $passepartoutId]);
+        save_passepartout_pricing_fields($conn, $passepartoutId, parse_passepartout_pricing_from_post());
         save_passepartout_sheet_stocks($conn, $passepartoutId, parse_passepartout_sheet_stocks_from_post());
         $conn->commit();
         flash('Паспартуто е редактирано успешно!', 'success');

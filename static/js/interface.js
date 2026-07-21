@@ -516,8 +516,11 @@ async function updateOrderPricing(form) {
             const openingsText = pricing.passepartout_openings > 1
                 ? `, ${pricing.passepartout_openings} отвора`
                 : '';
+            const priceDetail = pp.pricing_mode === 'tier'
+                ? `, ${pp.tier_label} (${pp.unit_price.toFixed(2)} €/бр.)`
+                : '';
             lines.push(
-                `Паспарту: ${pp.bill_width}×${pp.bill_height} cm${multiSheetText}${openingsText}${usageText}${labor} → ${pricing.passepartout_cost.toFixed(2)} €`
+                `Паспарту: ${pp.bill_width}×${pp.bill_height} cm${multiSheetText}${openingsText}${priceDetail}${usageText}${labor} → ${pricing.passepartout_cost.toFixed(2)} €`
             );
         } else if (pricing.passepartout_labor_cost > 0) {
             lines.push(`Рязане паспарту на клиент → ${pricing.passepartout_labor_cost.toFixed(2)} €`);

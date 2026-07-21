@@ -646,6 +646,104 @@ function resolve_passepartout_billing_dimensions(
     ];
 }
 
+function get_passepartout_tier_cut_sizes(string $scheme): array
+{
+    if ($scheme === '80x120') {
+        return [[30, 40], [40, 60], [60, 80], [81, 120]];
+    }
+
+    return [[25, 40], [40, 50], [51, 81], [81, 102]];
+}
+
+function passepartout_cut_dimensions_match(float $billW, float $billH, float $tierW, float $tierH, float $tolerance = 0.01): bool
+{
+    return (abs($billW - $tierW) <= $tolerance && abs($billH - $tierH) <= $tolerance)
+        || (abs($billW - $tierH) <= $tolerance && abs($billH - $tierW) <= $tolerance);
+}
+
+function resolve_passepartout_tier_index(
+    float $billW,
+    float $billH,
+    string $scheme,
+    bool $oversize = false
+): int {
+    if ($oversize) {
+        return 4;
+    }
+
+    $aliases = [
+        '80x100' => [
+            [50, 80, 3],
+            [100, 100, 4],
+        ],
+    ];
+
+    foreach ($aliases[$scheme] ?? [] as [$aliasW, $aliasH, $tierIndex]) {
+        if (passepartout_cut_dimensions_match($billW, $billH, $aliasW, $aliasH)) {
+            return $tierIndex;
+        }
+    }
+
+    $tierCuts = get_passepartout_tier_cut_sizes($scheme);
+    foreach ($tierCuts as $index => [$tierW, $tierH]) {
+        if (passepartout_cut_dimensions_match($billW, $billH, $tierW, $tierH)) {
+            return $index + 1;
+        }
+    }
+
+    foreach ($tierCuts as $index => [$tierW, $tierH]) {
+        if (cut_fits_request($tierW, $tierH, $billW, $billH)) {
+            return $index + 1;
+        }
+    }
+
+    return 4;
+}
+
+function get_passepartout_tier_price(array $passepartout, int $tierIndex): float
+{
+    $tierIndex = max(1, min(4, $tierIndex));
+    $column = "price_tier_{$tierIndex}";
+
+    return (float)($passepartout[$column] ?? 0);
+}
+
+function resolve_passepartout_material_cost(
+    array $passepartout,
+    float $billW,
+    float $billH,
+    string $scheme,
+    bool $oversize,
+    float $sqm,
+    int $frameCount,
+    int $sheetsToCharge
+): array {
+    if (!passepartout_uses_tier_pricing($passepartout)) {
+        $unitPrice = (float)$passepartout['price'];
+
+        return [
+            'mode' => 'sqm',
+            'unit_price' => $unitPrice,
+            'tier_index' => null,
+            'tier_label' => null,
+            'cost' => round($unitPrice * $sqm, 2),
+        ];
+    }
+
+    $tierIndex = resolve_passepartout_tier_index($billW, $billH, $scheme, $oversize);
+    $tierPrice = get_passepartout_tier_price($passepartout, $tierIndex);
+    $labels = get_passepartout_tier_scheme_labels()[$scheme] ?? [];
+    $tierLabel = $labels[$tierIndex - 1] ?? "ниво {$tierIndex}";
+
+    return [
+        'mode' => 'tier',
+        'unit_price' => $tierPrice,
+        'tier_index' => $tierIndex,
+        'tier_label' => $tierLabel,
+        'cost' => round($tierPrice * $frameCount * $sheetsToCharge, 2),
+    ];
+}
+
 function calculate_passepartout_labor_cost(
     PDO $conn,
     array $order,
@@ -733,7 +831,21 @@ function calculate_passepartout_billing(PDO $conn, array $order): ?array
         ) * $sheetsToCharge;
     }
 
-    $cost = (float)$passepartout['price'] * $sqm;
+    $tierScheme = trim($passepartout['tier_scheme'] ?? '80x100');
+    if (!isset(get_passepartout_tier_scheme_labels()[$tierScheme])) {
+        $tierScheme = '80x100';
+    }
+
+    $materialPricing = resolve_passepartout_material_cost(
+        $passepartout,
+        $billWidth,
+        $billHeight,
+        $tierScheme,
+        !empty($billingDims['oversize']),
+        $sqm,
+        $frameCount,
+        $sheetsToCharge
+    );
 
     return [
         'passepartout_id' => (int)$passepartout['id'],
@@ -744,8 +856,11 @@ function calculate_passepartout_billing(PDO $conn, array $order): ?array
         'sheet_type_id' => $billingDims['sheet_type_id'],
         'sheet_usage' => $sheetUsage,
         'square_meters' => round($sqm, 4),
-        'unit_price' => (float)$passepartout['price'],
-        'cost' => round($cost, 2),
+        'unit_price' => $materialPricing['unit_price'],
+        'pricing_mode' => $materialPricing['mode'],
+        'tier_index' => $materialPricing['tier_index'],
+        'tier_label' => $materialPricing['tier_label'],
+        'cost' => $materialPricing['cost'],
         'sheets_charged' => $sheetsToCharge,
         'multi_sheet_billing' => $sheetsToCharge > 1,
         'oversize' => !empty($billingDims['oversize']),

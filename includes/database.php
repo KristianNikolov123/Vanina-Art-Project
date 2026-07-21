@@ -260,6 +260,27 @@ function ensure_catalog_schema(PDO $conn): void
     }
 
     seed_price_list_catalog($conn);
+    ensure_passepartout_tier_pricing_schema($conn);
+}
+
+function ensure_passepartout_tier_pricing_schema(PDO $conn): void
+{
+    $isMysql = $conn->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql';
+
+    $columns = [
+        'price_kind' => $isMysql ? "VARCHAR(20) NOT NULL DEFAULT 'manual'" : "TEXT NOT NULL DEFAULT 'manual'",
+        'tier_scheme' => $isMysql ? "VARCHAR(10) NOT NULL DEFAULT '80x100'" : "TEXT NOT NULL DEFAULT '80x100'",
+        'price_tier_1' => $isMysql ? 'DECIMAL(10,2) NOT NULL DEFAULT 0' : 'REAL NOT NULL DEFAULT 0',
+        'price_tier_2' => $isMysql ? 'DECIMAL(10,2) NOT NULL DEFAULT 0' : 'REAL NOT NULL DEFAULT 0',
+        'price_tier_3' => $isMysql ? 'DECIMAL(10,2) NOT NULL DEFAULT 0' : 'REAL NOT NULL DEFAULT 0',
+        'price_tier_4' => $isMysql ? 'DECIMAL(10,2) NOT NULL DEFAULT 0' : 'REAL NOT NULL DEFAULT 0',
+    ];
+
+    foreach ($columns as $column => $type) {
+        if (!table_has_column($conn, 'passepartouts', $column)) {
+            $conn->exec("ALTER TABLE passepartouts ADD COLUMN {$column} {$type}");
+        }
+    }
 }
 
 function migrate_legacy_passepartout_stock(PDO $conn): void

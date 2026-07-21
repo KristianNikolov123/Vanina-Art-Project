@@ -281,6 +281,209 @@ function seed_hanging_from_price_list(PDO $conn): void
     }
 }
 
+function get_passepartout_tier_scheme_labels(): array
+{
+    return [
+        '80x120' => [
+            'до 30×40',
+            'до 40×60',
+            'до 60×80',
+            'до 81×120',
+        ],
+        '80x100' => [
+            'до 25×40',
+            'до 40×50',
+            'до 51×81',
+            'до 81×102',
+        ],
+    ];
+}
+
+function get_passepartout_price_kind_definitions(): array
+{
+    return [
+        'type1' => [
+            'label' => 'Вид 1',
+            'scheme' => '80x120',
+            'sheet_label' => 'лист 80×120',
+            'summary' => 'Стандартна ценова група за лист 80×120.',
+            'tiers' => [2.15, 3.99, 7.36, 14.11],
+        ],
+        'type2' => [
+            'label' => 'Вид 2',
+            'scheme' => '80x100',
+            'sheet_label' => 'лист 80×100',
+            'summary' => 'Икономична ценова група за лист 80×100 (най-ниски тарифи).',
+            'tiers' => [1.84, 3.68, 6.75, 12.27],
+        ],
+        'type3' => [
+            'label' => 'Вид 3',
+            'scheme' => '80x100',
+            'sheet_label' => 'лист 80×100',
+            'summary' => 'Висок клас за лист 80×100 (най-високи тарифи).',
+            'tiers' => [4.91, 9.82, 18.38, 34.97],
+        ],
+        'type4' => [
+            'label' => 'Вид 4',
+            'scheme' => '80x100',
+            'sheet_label' => 'лист 80×100',
+            'summary' => 'Средна ценова група за лист 80×100.',
+            'tiers' => [2.45, 4.91, 9.11, 16.57],
+        ],
+        'type5' => [
+            'label' => 'Вид 5',
+            'scheme' => '80x120',
+            'sheet_label' => 'лист 80×120',
+            'summary' => 'Висок клас за лист 80×120.',
+            'tiers' => [3.68, 7.36, 14.11, 27.00],
+        ],
+        'type6' => [
+            'label' => 'Вид 6',
+            'scheme' => '80x100',
+            'sheet_label' => 'лист 80×100',
+            'summary' => 'Средна ценова група за лист 80×100 (алтернативна тарифа).',
+            'tiers' => [2.76, 4.60, 11.04, 21.47],
+        ],
+    ];
+}
+
+function describe_passepartout_price_kind(string $kindKey): string
+{
+    $definitions = get_passepartout_price_kind_definitions();
+    if (!isset($definitions[$kindKey])) {
+        return '';
+    }
+
+    $definition = $definitions[$kindKey];
+    $tierLabels = get_passepartout_tier_scheme_labels()[$definition['scheme']] ?? [];
+    $parts = [];
+    foreach ($definition['tiers'] as $index => $price) {
+        $sizeLabel = $tierLabels[$index] ?? ('ниво ' . ($index + 1));
+        $parts[] = sprintf('%s → %s €', $sizeLabel, number_format((float)$price, 2, '.', ''));
+    }
+
+    return ($definition['summary'] ?? '') . ' ' . implode('; ', $parts);
+}
+
+function get_passepartout_price_kinds_for_display(): array
+{
+    $rows = [];
+    foreach (get_passepartout_price_kind_definitions() as $kindKey => $definition) {
+        $tierLabels = get_passepartout_tier_scheme_labels()[$definition['scheme']] ?? [];
+        $tiers = [];
+        foreach ($definition['tiers'] as $index => $price) {
+            $tiers[] = [
+                'size_label' => $tierLabels[$index] ?? ('Ниво ' . ($index + 1)),
+                'price' => (float)$price,
+            ];
+        }
+
+        $rows[] = [
+            'key' => $kindKey,
+            'label' => $definition['label'],
+            'sheet_label' => $definition['sheet_label'] ?? $definition['scheme'],
+            'summary' => $definition['summary'] ?? '',
+            'scheme' => $definition['scheme'],
+            'tiers' => $tiers,
+        ];
+    }
+
+    return $rows;
+}
+
+function passepartout_uses_tier_pricing(array $passepartout): bool
+{
+    $kind = trim($passepartout['price_kind'] ?? '');
+    if ($kind !== '' && $kind !== 'manual') {
+        return true;
+    }
+
+    for ($i = 1; $i <= 4; $i++) {
+        if ((float)($passepartout["price_tier_{$i}"] ?? 0) > 0) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function resolve_passepartout_pricing_from_input(array $input): array
+{
+    $kind = trim($input['price_kind'] ?? 'manual');
+    $definitions = get_passepartout_price_kind_definitions();
+
+    if ($kind !== 'manual' && isset($definitions[$kind])) {
+        $definition = $definitions[$kind];
+
+        return [
+            'price_kind' => $kind,
+            'tier_scheme' => $definition['scheme'],
+            'price_tier_1' => (float)$definition['tiers'][0],
+            'price_tier_2' => (float)$definition['tiers'][1],
+            'price_tier_3' => (float)$definition['tiers'][2],
+            'price_tier_4' => (float)$definition['tiers'][3],
+            'price' => (float)$definition['tiers'][0],
+        ];
+    }
+
+    $tiers = [];
+    for ($i = 1; $i <= 4; $i++) {
+        $tiers[$i] = (float)($input["price_tier_{$i}"] ?? 0);
+    }
+
+    $scheme = trim($input['tier_scheme'] ?? '80x100');
+    if (!isset(get_passepartout_tier_scheme_labels()[$scheme])) {
+        $scheme = '80x100';
+    }
+
+    $fallbackPrice = (float)($input['price'] ?? 0);
+    if ($fallbackPrice <= 0) {
+        $fallbackPrice = $tiers[1] > 0 ? $tiers[1] : max($tiers);
+    }
+
+    return [
+        'price_kind' => 'manual',
+        'tier_scheme' => $scheme,
+        'price_tier_1' => $tiers[1],
+        'price_tier_2' => $tiers[2],
+        'price_tier_3' => $tiers[3],
+        'price_tier_4' => $tiers[4],
+        'price' => $fallbackPrice,
+    ];
+}
+
+function format_passepartout_price_summary(array $passepartout): string
+{
+    $definitions = get_passepartout_price_kind_definitions();
+    $kind = trim($passepartout['price_kind'] ?? 'manual');
+
+    if ($kind !== 'manual' && isset($definitions[$kind])) {
+        $tiers = $definitions[$kind]['tiers'];
+        $min = min($tiers);
+        $max = max($tiers);
+
+        return $definitions[$kind]['label'] . ' (' . number_format($min, 2, '.', '') . '–' . number_format($max, 2, '.', '') . ' €)';
+    }
+
+    if (!passepartout_uses_tier_pricing($passepartout)) {
+        return number_format((float)($passepartout['price'] ?? 0), 2, '.', '') . ' €/кв.м.';
+    }
+
+    $tierValues = [];
+    for ($i = 1; $i <= 4; $i++) {
+        $tierValues[] = (float)($passepartout["price_tier_{$i}"] ?? 0);
+    }
+    $positive = array_values(array_filter($tierValues, fn($value) => $value > 0));
+    if (empty($positive)) {
+        return 'Ръчно';
+    }
+
+    $min = min($positive);
+    $max = max($positive);
+
+    return 'Ръчно (' . number_format($min, 2, '.', '') . '–' . number_format($max, 2, '.', '') . ' €)';
+}
+
 function upsert_catalog_items(PDO $conn, string $table, array $items, bool $hasMinPrice): void
 {
     $isMysql = $conn->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql';

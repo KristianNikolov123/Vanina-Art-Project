@@ -28,7 +28,7 @@
                             <input type="checkbox" class="form-check-input" id="selectAllPassepartouts" title="Избери всички">
                         </th>
                         <th>№</th>
-                        <th>Цена (€/кв.м.)</th>
+                        <th>Цени</th>
                         <?php foreach ($sheet_types as $sheetType): ?>
                         <th>Наличност <?= e($sheetType['name']) ?> (бр.)</th>
                         <?php endforeach; ?>
@@ -37,13 +37,22 @@
                 </thead>
                 <tbody>
                     <?php foreach ($passepartouts as $passepartout): ?>
+                    <?php
+                    $tierValues = [];
+                    for ($tier = 1; $tier <= 4; $tier++) {
+                        $tierValues[] = (float)($passepartout['price_tier_' . $tier] ?? 0);
+                    }
+                    ?>
                     <tr data-passepartout-id="<?= (int)$passepartout['id'] ?>"
-                        data-sheet-stocks="<?= e(json_encode($passepartout['sheet_stocks'] ?? [])) ?>">
+                        data-sheet-stocks="<?= e(json_encode($passepartout['sheet_stocks'] ?? [])) ?>"
+                        data-price-kind="<?= e($passepartout['price_kind'] ?? 'manual') ?>"
+                        data-tier-scheme="<?= e($passepartout['tier_scheme'] ?? '80x100') ?>"
+                        data-price-tiers="<?= e(json_encode($tierValues)) ?>">
                         <td class="bulk-col">
                             <input type="checkbox" class="form-check-input bulk-row-checkbox" value="<?= (int)$passepartout['id'] ?>">
                         </td>
                         <td class="name"><?= e($passepartout['name']) ?></td>
-                        <td class="price"><?= e($passepartout['price']) ?></td>
+                        <td class="price-summary"><?= e(format_passepartout_price_summary($passepartout)) ?></td>
                         <?php foreach ($sheet_types as $sheetType): ?>
                         <?php
                             $stock = $passepartout['sheet_stocks'][(int)$sheetType['id']] ?? 0;
@@ -143,11 +152,12 @@
                                     <label class="form-label">№</label>
                                     <input type="text" class="form-control" name="passepartout_rows[0][name]" data-field="name" required>
                                 </div>
-                                <div class="col-md-4">
-                                    <label class="form-label">Цена (€/кв.м.)</label>
-                                    <input type="number" class="form-control" name="passepartout_rows[0][price]" data-field="price" step="0.01" min="0" required>
-                                </div>
                             </div>
+                            <?php
+                            $pricingNameBase = 'passepartout_rows[0]';
+                            $pricingIdSuffix = '_0';
+                            include __DIR__ . '/partials/passepartout_pricing_fields.php';
+                            ?>
                             <div class="mt-2">
                                 <div class="small text-muted mb-1">Наличност по листове (бр.)</div>
                                 <div class="row g-2">
@@ -168,7 +178,7 @@
                     <button type="button" class="btn btn-outline-secondary btn-sm multi-add-add-btn mt-2" id="addPassepartoutRowBtn">
                         <i class="fas fa-plus"></i> Още паспарту
                     </button>
-                    <div class="form-text mt-2">Новият ред копира цена и наличности от предишния — сменете само номера.</div>
+                    <div class="form-text mt-2">Новият ред копира вид цени и наличности от предишния — сменете само номера.</div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отказ</button>
@@ -180,7 +190,7 @@
 </div>
 
 <div class="modal fade" id="editPassepartoutModal" tabindex="-1">
-    <div class="modal-dialog">
+    <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title">Редактирай паспарту</h5>
@@ -192,10 +202,11 @@
                         <label for="edit_name" class="form-label">№</label>
                         <input type="text" class="form-control" id="edit_name" name="name" required>
                     </div>
-                    <div class="form-group mb-3">
-                        <label for="edit_price" class="form-label">Цена (€/кв.м. от фактурирания размер)</label>
-                        <input type="number" class="form-control" id="edit_price" name="price" step="0.01" min="0" required>
-                    </div>
+                    <?php
+                    $pricingNameBase = '';
+                    $pricingIdSuffix = '_edit';
+                    include __DIR__ . '/partials/passepartout_pricing_fields.php';
+                    ?>
                     <div class="form-group mb-3">
                         <label class="form-label">Наличност по листове</label>
                         <?php foreach ($sheet_types as $sheetType): ?>
@@ -214,3 +225,8 @@
         </div>
     </div>
 </div>
+
+<script>
+window.PASSEPARTOUT_PRICE_KINDS = <?= json_encode($passepartout_price_kinds, JSON_UNESCAPED_UNICODE) ?>;
+window.PASSEPARTOUT_TIER_LABELS = <?= json_encode($passepartout_tier_labels, JSON_UNESCAPED_UNICODE) ?>;
+</script>

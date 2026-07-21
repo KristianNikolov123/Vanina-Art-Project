@@ -414,10 +414,41 @@ function parse_passepartout_rows_from_post(): array
             'name' => $name,
             'price' => $row['price'] ?? 0,
             'sheet_stock' => $sheetStock,
+            'price_kind' => $row['price_kind'] ?? 'manual',
+            'tier_scheme' => $row['tier_scheme'] ?? '80x100',
+            'price_tier_1' => $row['price_tier_1'] ?? 0,
+            'price_tier_2' => $row['price_tier_2'] ?? 0,
+            'price_tier_3' => $row['price_tier_3'] ?? 0,
+            'price_tier_4' => $row['price_tier_4'] ?? 0,
         ];
     }
 
     return $parsed;
+}
+
+function parse_passepartout_pricing_from_post(): array
+{
+    return resolve_passepartout_pricing_from_input($_POST);
+}
+
+function save_passepartout_pricing_fields(PDO $conn, int $passepartoutId, array $pricing): void
+{
+    $stmt = $conn->prepare('
+        UPDATE passepartouts
+        SET price = ?, price_kind = ?, tier_scheme = ?,
+            price_tier_1 = ?, price_tier_2 = ?, price_tier_3 = ?, price_tier_4 = ?
+        WHERE id = ?
+    ');
+    $stmt->execute([
+        $pricing['price'],
+        $pricing['price_kind'],
+        $pricing['tier_scheme'],
+        $pricing['price_tier_1'],
+        $pricing['price_tier_2'],
+        $pricing['price_tier_3'],
+        $pricing['price_tier_4'],
+        $passepartoutId,
+    ]);
 }
 
 function is_duplicate_key_exception(Throwable $e): bool
@@ -470,13 +501,28 @@ function create_profiles_bulk(PDO $conn, array $rows): array
 
 function create_passepartouts_bulk(PDO $conn, array $rows): array
 {
-    $stmt = $conn->prepare('INSERT INTO passepartouts (name, price, stock) VALUES (?, ?, 0)');
+    $stmt = $conn->prepare('
+        INSERT INTO passepartouts (
+            name, price, stock, price_kind, tier_scheme,
+            price_tier_1, price_tier_2, price_tier_3, price_tier_4
+        ) VALUES (?, ?, 0, ?, ?, ?, ?, ?, ?)
+    ');
     $added = [];
     $skipped = [];
 
     foreach ($rows as $row) {
         try {
-            $stmt->execute([$row['name'], $row['price']]);
+            $pricing = resolve_passepartout_pricing_from_input($row);
+            $stmt->execute([
+                $row['name'],
+                $pricing['price'],
+                $pricing['price_kind'],
+                $pricing['tier_scheme'],
+                $pricing['price_tier_1'],
+                $pricing['price_tier_2'],
+                $pricing['price_tier_3'],
+                $pricing['price_tier_4'],
+            ]);
             $passepartoutId = (int)$conn->lastInsertId();
             save_passepartout_sheet_stocks($conn, $passepartoutId, $row['sheet_stock']);
             $added[] = $row['name'];
