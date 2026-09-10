@@ -9,6 +9,50 @@ function profile_linear_meters(float $widthCm, float $heightCm, int $frameCount 
     return 2 * ($widthCm + $heightCm) / 100 * $frameCount;
 }
 
+function profile_material_fir_cm(float $profileWidthCm): float
+{
+    if ($profileWidthCm <= 0) {
+        return 0;
+    }
+
+    return $profileWidthCm * 8;
+}
+
+function profile_material_fir_linear_meters(float $profileWidthCm, int $frameCount = 1): float
+{
+    if ($profileWidthCm <= 0 || $frameCount < 1) {
+        return 0;
+    }
+
+    return profile_material_fir_cm($profileWidthCm) / 100 * $frameCount;
+}
+
+/**
+ * Л.м. за фирмен профил: 2×(ш+в)/100 + ширина×8/100 (фирата е извън скобите, не се умножава по 2).
+ *
+ * @return array{base_meters: float, fir_meters: float, total_meters: float}
+ */
+function profile_firm_material_linear_meters(
+    float $widthCm,
+    float $heightCm,
+    float $profileWidthCm,
+    int $frameCount = 1
+): array {
+    $baseMeters = profile_billing_linear_meters(
+        $widthCm,
+        $heightCm,
+        $frameCount,
+        $profileWidthCm > 0 ? $profileWidthCm : null
+    );
+    $firMeters = profile_material_fir_linear_meters($profileWidthCm, $frameCount);
+
+    return [
+        'base_meters' => $baseMeters,
+        'fir_meters' => $firMeters,
+        'total_meters' => $baseMeters + $firMeters,
+    ];
+}
+
 function profile_billing_linear_meters(
     float $widthCm,
     float $heightCm,
@@ -76,14 +120,28 @@ function calculate_stacked_profile_material(
         $profileWidth = isset($profile['width_cm']) ? (float)$profile['width_cm'] : 0.0;
         $billW = $width + 2 * $offset;
         $billH = $height + 2 * $offset;
-        $meters = profile_billing_linear_meters(
-            $billW,
-            $billH,
-            $frameCount,
-            $profileWidth > 0 ? $profileWidth : null
-        );
+        $isFirmMaterial = ($profile['profile_type'] ?? 'wood') !== 'client_material';
+        $firCm = 0.0;
+        $firMeters = 0.0;
+        $baseMeters = 0.0;
+        if ($isFirmMaterial && $profileWidth > 0) {
+            $billing = profile_firm_material_linear_meters($billW, $billH, $profileWidth, $frameCount);
+            $baseMeters = $billing['base_meters'];
+            $firMeters = $billing['fir_meters'];
+            $meters = $billing['total_meters'];
+            $firCm = profile_material_fir_cm($profileWidth);
+        } else {
+            $meters = profile_billing_linear_meters(
+                $billW,
+                $billH,
+                $frameCount,
+                $profileWidth > 0 ? $profileWidth : null
+            );
+            $baseMeters = $meters;
+        }
+
         $cost = 0.0;
-        if (($profile['profile_type'] ?? 'wood') !== 'client_material') {
+        if ($isFirmMaterial) {
             $cost = (float)$profile['price'] * $meters;
         }
 
@@ -93,6 +151,9 @@ function calculate_stacked_profile_material(
             'name' => $name,
             'found' => true,
             'meters' => round($meters, 2),
+            'base_meters' => round($baseMeters, 2),
+            'fir_cm' => $firCm > 0 ? round($firCm, 2) : null,
+            'fir_meters' => $firMeters > 0 ? round($firMeters, 2) : null,
             'bill_width' => $billW,
             'bill_height' => $billH,
             'cost' => round($cost, 2),
@@ -105,6 +166,53 @@ function calculate_stacked_profile_material(
     return [
         'material_cost' => round($totalCost, 2),
         'total_meters' => round($totalMeters, 2),
+        'lines' => $lines,
+    ];
+}
+
+function calculate_stacked_profile_labor(
+    PDO $conn,
+    float $width,
+    float $height,
+    int $frameCount,
+    array $profileNames
+): array {
+    $totalLabor = 0.0;
+    $lines = [];
+    $offset = 0.0;
+    $hasDimensions = $width > 0 && $height > 0;
+
+    foreach ($profileNames as $name) {
+        $profile = get_catalog_item_by_name($conn, 'profiles', $name);
+        if (!$profile) {
+            $lines[] = ['name' => $name, 'found' => false, 'cost' => 0.0];
+            continue;
+        }
+
+        $profileWidth = isset($profile['width_cm']) ? (float)$profile['width_cm'] : 0.0;
+        $billW = $width + 2 * $offset;
+        $billH = $height + 2 * $offset;
+
+        if ($hasDimensions) {
+            $labor = calculate_frame_labor($conn, $billW, $billH, $profile, $frameCount);
+        } else {
+            $labor = calculate_frame_labor_minimum($conn, $profile, $frameCount);
+        }
+
+        $totalLabor += $labor;
+        $lines[] = [
+            'name' => $name,
+            'found' => true,
+            'cost' => round($labor, 2),
+            'bill_width' => $hasDimensions ? $billW : null,
+            'bill_height' => $hasDimensions ? $billH : null,
+        ];
+
+        $offset += $profileWidth;
+    }
+
+    return [
+        'labor_cost' => round($totalLabor, 2),
         'lines' => $lines,
     ];
 }
@@ -750,19 +858,22 @@ function calculate_passepartout_labor_cost(
     ?array $passepartoutBilling,
     int $frameCount
 ): float {
+    if ($frameCount < 1) {
+        return 0.0;
+    }
+
     $openings = max(1, (int)($order['passepartout_openings'] ?? 1));
     $cutting = get_pricing_setting($conn, 'passepartout_cutting_labor', 1.84);
     $extraOpening = get_pricing_setting($conn, 'passepartout_multi_opening', 1.22);
     $clientCutting = !empty($order['client_passepartout_cutting']);
     $firmPassepartout = $passepartoutBilling !== null;
-    $labor = 0.0;
 
-    if ($clientCutting && !$firmPassepartout) {
-        $labor += $cutting * $frameCount;
-        if ($openings > 1) {
-            $labor += max(0, $openings - 1) * $extraOpening * $frameCount;
-        }
-    } elseif ($firmPassepartout && $openings > 1) {
+    if (!$clientCutting && !$firmPassepartout) {
+        return 0.0;
+    }
+
+    $labor = $cutting * $frameCount;
+    if ($openings > 1) {
         $labor += max(0, $openings - 1) * $extraOpening * $frameCount;
     }
 
@@ -905,28 +1016,29 @@ function calculate_order_pricing(PDO $conn, array $order): array
     $profileLines = [];
     $mainProfile = null;
     $profileName = trim($order['profile'] ?? '');
+    $profileNames = $profileName !== '' ? get_order_profile_names($order) : [];
 
     if ($profileName !== '') {
         $mainProfile = get_catalog_item_by_name($conn, 'profiles', $profileName);
     }
 
-    if ($width > 0 && $height > 0) {
-        $profileNames = get_order_profile_names($order);
-        if (!empty($profileNames)) {
-            $stacked = calculate_stacked_profile_material($conn, $width, $height, $frameCount, $profileNames);
-            $profileMaterialCost = $stacked['material_cost'];
-            $profileMeters = $stacked['total_meters'];
-            $profileLines = $stacked['lines'];
-        }
+    if ($width > 0 && $height > 0 && !empty($profileNames)) {
+        $stacked = calculate_stacked_profile_material($conn, $width, $height, $frameCount, $profileNames);
+        $profileMaterialCost = $stacked['material_cost'];
+        $profileMeters = $stacked['total_meters'];
+        $profileLines = $stacked['lines'];
     }
 
     $frameLaborCost = 0.0;
-    if ($profileName !== '') {
-        if ($width > 0 && $height > 0) {
-            $frameLaborCost = calculate_frame_labor($conn, $width, $height, $mainProfile, $frameCount);
-        } else {
-            $frameLaborCost = calculate_frame_labor_minimum($conn, $mainProfile, $frameCount);
+    if (!empty($profileNames)) {
+        $stackedLabor = calculate_stacked_profile_labor($conn, $width, $height, $frameCount, $profileNames);
+        $frameLaborCost = $stackedLabor['labor_cost'];
+        foreach ($profileLines as $index => &$profileLine) {
+            if (isset($stackedLabor['lines'][$index]['cost'])) {
+                $profileLine['labor_cost'] = $stackedLabor['lines'][$index]['cost'];
+            }
         }
+        unset($profileLine);
     }
 
     $frameShape = $order['frame_shape'] ?? '';
@@ -1061,8 +1173,12 @@ function calculate_order_pricing(PDO $conn, array $order): array
                 'found' => !empty($line['found']),
                 'meters' => (float)($line['meters'] ?? 0),
                 'cost' => (float)($line['cost'] ?? 0),
+                'labor_cost' => (float)($line['labor_cost'] ?? 0),
                 'bill_width' => isset($line['bill_width']) ? round((float)$line['bill_width'], 1) : null,
                 'bill_height' => isset($line['bill_height']) ? round((float)$line['bill_height'], 1) : null,
+                'base_meters' => isset($line['base_meters']) ? (float)$line['base_meters'] : null,
+                'fir_cm' => isset($line['fir_cm']) ? (float)$line['fir_cm'] : null,
+                'fir_meters' => isset($line['fir_meters']) ? (float)$line['fir_meters'] : null,
             ];
         }, $profileLines),
         'profile_wide_billing' => $mainProfile && isset($mainProfile['width_cm']) && (float)$mainProfile['width_cm'] >= 10

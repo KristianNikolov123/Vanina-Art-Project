@@ -1,5 +1,25 @@
 <?php
 
+function profile_lookup_key(string $name): string
+{
+    $name = mb_strtolower(trim($name), 'UTF-8');
+    $replacements = [
+        'а' => 'a', 'б' => 'b', 'в' => 'b', 'г' => 'g', 'д' => 'd',
+        'е' => 'e', 'ж' => 'j', 'з' => 'z', 'и' => 'i', 'й' => 'i',
+        'к' => 'k', 'л' => 'l', 'м' => 'm', 'н' => 'n', 'о' => 'o',
+        'п' => 'p', 'р' => 'r', 'с' => 's', 'т' => 't', 'у' => 'u',
+        'ф' => 'f', 'х' => 'h', 'ц' => 'c', 'ч' => 'c', 'ш' => 's',
+        'щ' => 's', 'ъ' => 'a', 'ь' => '', 'ю' => 'u', 'я' => 'a',
+    ];
+
+    $out = '';
+    foreach (preg_split('//u', $name, -1, PREG_SPLIT_NO_EMPTY) as $char) {
+        $out .= $replacements[$char] ?? $char;
+    }
+
+    return $out;
+}
+
 function get_catalog_item_by_name(PDO $conn, string $table, string $name): ?array
 {
     $allowed = ['profiles', 'glasses', 'passepartouts', 'backs', 'hanging_options'];
@@ -11,8 +31,22 @@ function get_catalog_item_by_name(PDO $conn, string $table, string $name): ?arra
     $stmt = $conn->prepare("SELECT * FROM {$table} WHERE TRIM(name) = ?");
     $stmt->execute([$name]);
     $item = $stmt->fetch();
+    if ($item) {
+        return $item;
+    }
 
-    return $item ?: null;
+    if ($table !== 'profiles') {
+        return null;
+    }
+
+    $lookupKey = profile_lookup_key($name);
+    foreach ($conn->query('SELECT * FROM profiles')->fetchAll() as $row) {
+        if (profile_lookup_key($row['name'] ?? '') === $lookupKey) {
+            return $row;
+        }
+    }
+
+    return null;
 }
 
 function hanging_shares_hanger_pool(string $name): bool

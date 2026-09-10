@@ -749,7 +749,7 @@ function build_order_from_post(?string $customerName = null): array
         'client_passepartout_cutting' => isset($_POST['client_passepartout_cutting']) ? 1 : 0,
         'manual_discount' => ($_POST['discount'] ?? '') !== '' ? (float)$_POST['discount'] : 0,
         'additional_profiles' => get_additional_profiles(),
-        'frame_count' => $_POST['frame_count'] ?? 1,
+        'frame_count' => max(1, (int)($_POST['frame_count'] ?? 1)),
         'customer_name' => $customerName ?? ($_POST['customer_name'] ?? ''),
     ];
 }
@@ -863,7 +863,7 @@ function prepare_order_persistence(PDO $conn, array $post, ?string $customerName
         'paid' => isset($post['paid']) ? 1 : 0,
         'collected' => isset($post['collected']) ? 1 : 0,
         'additional_profiles' => get_additional_profiles(),
-        'frame_count' => $post['frame_count'] ?? 1,
+        'frame_count' => max(1, (int)($post['frame_count'] ?? 1)),
         'advance_payment' => $post['advance_payment'] ?? null,
         'discount' => $post['discount'] ?? null,
         'description' => $post['description'] ?? '',

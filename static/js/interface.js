@@ -453,7 +453,11 @@ async function updateOrderPricing(form) {
                     ? ` при ${line.bill_width}×${line.bill_height} cm`
                     : '';
                 const costPart = line.cost > 0 ? ` → ${line.cost.toFixed(2)} €` : '';
-                let text = `${label} (${line.name}): ${line.meters} л.м.${dims}${costPart}`;
+                const laborPart = line.labor_cost > 0 ? `, труд ${line.labor_cost.toFixed(2)} €` : '';
+                const meterPart = line.fir_meters > 0 && line.base_meters != null
+                    ? `${line.base_meters.toFixed(2)} + ${line.fir_meters.toFixed(2)} фира = ${line.meters.toFixed(2)} л.м.`
+                    : `${line.meters} л.м.`;
+                let text = `${label} (${line.name}): ${meterPart}${dims}${costPart}${laborPart}`;
                 if (index === 0 && pricing.profile_wide_billing) {
                     text += ' (широк профил → 3 м/страна)';
                 }
@@ -462,8 +466,10 @@ async function updateOrderPricing(form) {
                 }
                 lines.push(text);
             });
-            if (pricing.frame_labor_cost > 0) {
+            if (pricing.frame_labor_cost > 0 && !(pricing.profile_lines && pricing.profile_lines.some((line) => line.labor_cost > 0))) {
                 lines.push(`Труд по рамка → ${pricing.frame_labor_cost.toFixed(2)} €`);
+            } else if (pricing.frame_labor_cost > 0 && pricing.profile_lines && pricing.profile_lines.length > 1) {
+                lines.push(`Общ труд по профили → ${pricing.frame_labor_cost.toFixed(2)} €`);
             }
         } else if (pricing.profile_material_cost > 0 || pricing.frame_labor_cost > 0) {
             const parts = [];
