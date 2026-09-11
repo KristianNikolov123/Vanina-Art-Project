@@ -219,8 +219,27 @@ if ($uri === '/hanging') {
             : (float)($hangingRow['stock'] ?? 0);
     }
     unset($hangingRow);
-    render('hanging.php', ['title' => 'Окачване', 'current_page' => 'hanging', 'hanging_options' => $hanging_options, 'extra_js' => 'hanging.js']);
+    seed_hanging_weight_tiers($conn);
+    render('hanging.php', [
+        'title' => 'Окачване',
+        'current_page' => 'hanging',
+        'hanging_options' => $hanging_options,
+        'weight_tiers' => get_hanging_weight_tiers($conn),
+        'extra_js' => 'hanging.js',
+    ]);
     exit;
+}
+
+if ($uri === '/save_hanging_weight_tiers' && $method === 'POST') {
+    require_login();
+    $conn = get_db_connection();
+    try {
+        $updated = save_hanging_weight_tiers_from_post($conn, $_POST);
+        flash("Запазени са {$updated} стъпки за връзка по тегло.", 'success');
+    } catch (Exception $e) {
+        flash('Грешка при запазване: ' . $e->getMessage(), 'danger');
+    }
+    redirect('/hanging');
 }
 
 if ($uri === '/services') {

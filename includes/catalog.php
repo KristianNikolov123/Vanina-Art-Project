@@ -98,6 +98,110 @@ function resolve_hanging_stock_deduction(
     ];
 }
 
+function is_vrazka_hanging(string $name): bool
+{
+    return trim($name) === 'Връзка';
+}
+
+function get_hanging_weight_tier_defaults(): array
+{
+    return [
+        ['max_weight_kg' => 7.0, 'price_per_lm' => 1.22],
+        ['max_weight_kg' => 10.0, 'price_per_lm' => 1.83],
+        ['max_weight_kg' => 15.0, 'price_per_lm' => 3.05],
+        ['max_weight_kg' => 20.0, 'price_per_lm' => 4.30],
+    ];
+}
+
+function seed_hanging_weight_tiers(PDO $conn): void
+{
+    ensure_hanging_weight_tiers_schema($conn);
+
+    $count = (int)$conn->query('SELECT COUNT(*) FROM hanging_weight_tiers')->fetchColumn();
+    if ($count > 0) {
+        return;
+    }
+
+    $insert = $conn->prepare('INSERT INTO hanging_weight_tiers (max_weight_kg, price_per_lm, sort_order) VALUES (?, ?, ?)');
+    foreach (get_hanging_weight_tier_defaults() as $index => $tier) {
+        $insert->execute([$tier['max_weight_kg'], $tier['price_per_lm'], $index + 1]);
+    }
+}
+
+function get_hanging_weight_tiers(PDO $conn): array
+{
+    seed_hanging_weight_tiers($conn);
+    $rows = $conn->query('SELECT id, max_weight_kg, price_per_lm, sort_order FROM hanging_weight_tiers ORDER BY sort_order, max_weight_kg')->fetchAll();
+    $tiers = [];
+    $previousMax = 0.0;
+
+    foreach ($rows as $row) {
+        $maxWeight = (float)$row['max_weight_kg'];
+        $label = $previousMax <= 0
+            ? sprintf('до %.0f kg', $maxWeight)
+            : sprintf('%.0f–%.0f kg', $previousMax, $maxWeight);
+
+        $tiers[] = [
+            'id' => (int)$row['id'],
+            'max_weight_kg' => $maxWeight,
+            'price_per_lm' => (float)$row['price_per_lm'],
+            'sort_order' => (int)$row['sort_order'],
+            'label' => $label,
+        ];
+        $previousMax = $maxWeight;
+    }
+
+    return $tiers;
+}
+
+function resolve_vrazka_weight_tier(PDO $conn, float $weightKg): ?array
+{
+    $tiers = get_hanging_weight_tiers($conn);
+    if (empty($tiers)) {
+        return null;
+    }
+
+    if ($weightKg <= 0) {
+        return $tiers[0];
+    }
+
+    foreach ($tiers as $tier) {
+        if ($weightKg <= $tier['max_weight_kg'] + 0.0001) {
+            return $tier;
+        }
+    }
+
+    return $tiers[count($tiers) - 1];
+}
+
+function save_hanging_weight_tiers_from_post(PDO $conn, array $post): int
+{
+    ensure_hanging_weight_tiers_schema($conn);
+
+    if (empty($post['hanging_weight_tiers']) || !is_array($post['hanging_weight_tiers'])) {
+        return 0;
+    }
+
+    $update = $conn->prepare('UPDATE hanging_weight_tiers SET max_weight_kg = ?, price_per_lm = ? WHERE id = ?');
+    $updated = 0;
+
+    foreach ($post['hanging_weight_tiers'] as $id => $row) {
+        $tierId = (int)$id;
+        if ($tierId <= 0 || !is_array($row)) {
+            continue;
+        }
+        $maxWeight = (float)str_replace(',', '.', trim((string)($row['max_weight_kg'] ?? 0)));
+        $pricePerLm = (float)str_replace(',', '.', trim((string)($row['price_per_lm'] ?? 0)));
+        if ($maxWeight <= 0 || $pricePerLm < 0) {
+            continue;
+        }
+        $update->execute([$maxWeight, $pricePerLm, $tierId]);
+        $updated++;
+    }
+
+    return $updated;
+}
+
 function get_pricing_setting(PDO $conn, string $key, float $default = 0): float
 {
     $stmt = $conn->prepare('SELECT setting_value FROM pricing_settings WHERE setting_key = ?');
@@ -338,6 +442,7 @@ function seed_price_list_catalog(PDO $conn): void
     seed_glasses_from_price_list($conn);
     seed_backs_from_price_list($conn);
     seed_hanging_from_price_list($conn);
+    seed_hanging_weight_tiers($conn);
     seed_services_from_price_list($conn);
     sync_catalog_min_prices($conn);
 }

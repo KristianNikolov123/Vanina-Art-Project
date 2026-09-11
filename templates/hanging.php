@@ -61,6 +61,50 @@
     </table>
 </div>
 
+<?php $weight_tiers = $weight_tiers ?? []; ?>
+<?php if (!empty($weight_tiers)): ?>
+<div class="card mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <strong>Връзка — цени по тегло (€/л.м.)</strong>
+        <span class="badge bg-secondary">ценоразпис</span>
+    </div>
+    <div class="card-body">
+        <p class="text-muted small mb-3">
+            При поръчка с <strong>Връзка</strong> се въвежда теглото (kg). Минимумът за монтаж остава в колоната „Мин.“ на реда „Връзка“ (€/бр.).
+        </p>
+        <form method="post" action="<?= url_for('save_hanging_weight_tiers') ?>">
+            <div class="table-responsive">
+                <table class="table table-sm align-middle mb-3">
+                    <thead>
+                        <tr>
+                            <th>Диапазон</th>
+                            <th style="width: 10rem;">До (kg)</th>
+                            <th style="width: 10rem;">€/л.м.</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($weight_tiers as $index => $tier): ?>
+                        <tr>
+                            <td class="text-muted"><?= e($tier['label']) ?></td>
+                            <td>
+                                <input type="number" class="form-control form-control-sm" name="hanging_weight_tiers[<?= (int)$tier['id'] ?>][max_weight_kg]" value="<?= e(number_format((float)$tier['max_weight_kg'], 2, '.', '')) ?>" step="0.1" min="0.1" required>
+                            </td>
+                            <td>
+                                <input type="number" class="form-control form-control-sm" name="hanging_weight_tiers[<?= (int)$tier['id'] ?>][price_per_lm]" value="<?= e(number_format((float)$tier['price_per_lm'], 2, '.', '')) ?>" step="0.01" min="0" required>
+                            </td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+            <button type="submit" class="btn btn-primary btn-sm">
+                <i class="fas fa-save"></i> Запази стъпките
+            </button>
+        </form>
+    </div>
+</div>
+<?php endif; ?>
+
 <div class="modal fade" id="addHangingModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">

@@ -74,7 +74,11 @@ function viewOrder(orderId) {
     document.getElementById('viewOrderAdditionalProfiles').textContent = displayValue(data.additional_profiles);
     document.getElementById('viewOrderGlass').textContent = displayValue(data.glass);
     document.getElementById('viewOrderBack').textContent = displayValue(data.back);
-    document.getElementById('viewOrderHanging').textContent = displayValue(data.hanging);
+    let hangingText = displayValue(data.hanging);
+    if (data.hanging === 'Връзка' && data.weight_kg) {
+        hangingText += ` (${data.weight_kg} kg)`;
+    }
+    document.getElementById('viewOrderHanging').textContent = hangingText;
     document.getElementById('viewOrderCustomer').textContent = displayValue(data.customer_name);
 
     let passepartoutText = displayValue(data.passepartout);

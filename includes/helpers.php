@@ -27,6 +27,7 @@ function url_for(string $route, array $params = []): string
         'bulk_edit_profiles' => '/bulk_edit_profiles',
         'bulk_edit_passepartouts' => '/bulk_edit_passepartouts',
         'save_services' => '/save_services',
+        'save_hanging_weight_tiers' => '/save_hanging_weight_tiers',
         'verify_email' => '/verify',
     ];
 
@@ -254,6 +255,7 @@ function order_view_data(array $order): array
         'passepartout_bill_width' => $order['passepartout_bill_width'] ?? null,
         'passepartout_bill_height' => $order['passepartout_bill_height'] ?? null,
         'hanging' => $order['hanging'] ?? '',
+        'weight_kg' => isset($order['weight_kg']) && $order['weight_kg'] !== '' ? (float)$order['weight_kg'] : null,
         'customer_name' => $order['customer_name'] ?? '',
         'price' => $order['price'],
         'advance_payment' => $order['advance_payment'],
@@ -737,6 +739,7 @@ function build_order_from_post(?string $customerName = null): array
         'passepartout_id' => $passepartoutId > 0 ? $passepartoutId : null,
         'back' => trim($_POST['back'] ?? ''),
         'hanging' => trim($_POST['hanging'] ?? ''),
+        'weight_kg' => ($_POST['weight_kg'] ?? '') !== '' ? max(0, (float)$_POST['weight_kg']) : null,
         'passepartout_openings' => max(1, (int)($_POST['passepartout_openings'] ?? 1)),
         'urgent' => isset($_POST['urgent']) ? 1 : 0,
         'student_discount' => isset($_POST['student_discount']) ? 1 : 0,
@@ -780,6 +783,7 @@ function order_bind_values(array $order): array
         $order['passepartout_sheet_usage'],
         $order['back'],
         $order['hanging'],
+        $order['weight_kg'],
         $order['customer_name'],
         $order['price'],
         $order['paid'],
@@ -810,12 +814,12 @@ function insert_order_row(PDO $conn, array $order, int $orderNumber, int $subOrd
             order_number, sub_order_number, date, width, height, profile, glass, passepartout,
             passepartout_bill_width, passepartout_bill_height,
             passepartout_sheet_type_id, passepartout_sheet_usage,
-            back, hanging, customer_name, price, paid, collected,
+            back, hanging, weight_kg, customer_name, price, paid, collected,
             additional_profiles, frame_count, advance_payment, discount, description,
             passepartout_openings, urgent, student_discount, complex_passepartout, extra_services, transport_km,
             frame_box, frame_nonstandard, frame_shape, frame_high_complexity, client_passepartout_cutting
         ) VALUES (
-            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
         )
     ');
     $stmt->execute(array_merge([$orderNumber, $subOrderNumber], order_bind_values($order)));
@@ -828,7 +832,7 @@ function update_order_row(PDO $conn, array $order, int $orderId): void
             date = ?, width = ?, height = ?, profile = ?, glass = ?,
             passepartout = ?, passepartout_bill_width = ?, passepartout_bill_height = ?,
             passepartout_sheet_type_id = ?, passepartout_sheet_usage = ?,
-            back = ?, hanging = ?, customer_name = ?,
+            back = ?, hanging = ?, weight_kg = ?, customer_name = ?,
             price = ?, paid = ?, collected = ?, additional_profiles = ?,
             frame_count = ?, advance_payment = ?, discount = ?, description = ?,
             passepartout_openings = ?, urgent = ?, student_discount = ?,
@@ -859,6 +863,7 @@ function prepare_order_persistence(PDO $conn, array $post, ?string $customerName
         'passepartout_sheet_usage' => $stockOrder['passepartout_sheet_usage'] ?? null,
         'back' => $post['back'] ?? '',
         'hanging' => $post['hanging'] ?? '',
+        'weight_kg' => ($post['weight_kg'] ?? '') !== '' ? max(0, (float)$post['weight_kg']) : null,
         'customer_name' => $customerName ?? ($post['customer_name'] ?? ''),
         'price' => resolve_order_price($conn, $orderData, $post['price'] ?? null),
         'paid' => isset($post['paid']) ? 1 : 0,

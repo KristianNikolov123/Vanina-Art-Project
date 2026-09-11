@@ -251,6 +251,7 @@ function ensure_catalog_schema(PDO $conn): void
         'frame_shape' => $isMysql ? "VARCHAR(20) NOT NULL DEFAULT ''" : "TEXT NOT NULL DEFAULT ''",
         'frame_high_complexity' => $isMysql ? 'TINYINT(1) NOT NULL DEFAULT 0' : 'INTEGER NOT NULL DEFAULT 0',
         'client_passepartout_cutting' => $isMysql ? 'TINYINT(1) NOT NULL DEFAULT 0' : 'INTEGER NOT NULL DEFAULT 0',
+        'weight_kg' => $isMysql ? 'DECIMAL(10,2) NULL' : 'REAL',
         'deleted_at' => $isMysql ? 'DATETIME NULL' : 'TEXT',
     ];
     foreach ($orderExtraColumns as $column => $type) {
@@ -260,8 +261,33 @@ function ensure_catalog_schema(PDO $conn): void
     }
 
     ensure_price_list_rules_schema($conn);
+    ensure_hanging_weight_tiers_schema($conn);
     seed_price_list_catalog($conn);
     ensure_passepartout_tier_pricing_schema($conn);
+}
+
+function ensure_hanging_weight_tiers_schema(PDO $conn): void
+{
+    $isMysql = $conn->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql';
+    if ($isMysql) {
+        $conn->exec('
+            CREATE TABLE IF NOT EXISTS hanging_weight_tiers (
+                id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                max_weight_kg DECIMAL(10, 2) NOT NULL,
+                price_per_lm DECIMAL(10, 2) NOT NULL,
+                sort_order INT NOT NULL DEFAULT 0
+            ) ENGINE=InnoDB
+        ');
+    } else {
+        $conn->exec('
+            CREATE TABLE IF NOT EXISTS hanging_weight_tiers (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                max_weight_kg REAL NOT NULL,
+                price_per_lm REAL NOT NULL,
+                sort_order INTEGER NOT NULL DEFAULT 0
+            )
+        ');
+    }
 }
 
 function ensure_price_list_rules_schema(PDO $conn): void

@@ -67,7 +67,29 @@ function clearAddOrderForm() {
     }
 
     expandOrderExtrasIfNeeded(form, null);
+    syncHangingWeightField(form);
     form.dataset.autoPrice = '1';
+}
+
+function isVrazkaHanging(value) {
+    return String(value || '').trim() === 'Връзка';
+}
+
+function syncHangingWeightField(form) {
+    if (!form) return;
+
+    const hanging = form.querySelector('[name="hanging"]');
+    const weightWrap = form.querySelector('.hanging-weight-field');
+    const weightInput = form.querySelector('[name="weight_kg"]');
+    if (!hanging || !weightWrap) {
+        return;
+    }
+
+    const showWeight = isVrazkaHanging(hanging.value);
+    weightWrap.classList.toggle('d-none', !showWeight);
+    if (!showWeight && weightInput) {
+        weightInput.value = '';
+    }
 }
 
 function getOrderRowSortKeys(row) {
@@ -306,6 +328,11 @@ function editOrder(orderId) {
     }
     form.querySelector('[name="back"]').value = data.back ?? '';
     form.querySelector('[name="hanging"]').value = data.hanging ?? '';
+    const weightKg = form.querySelector('[name="weight_kg"]');
+    if (weightKg) {
+        weightKg.value = data.weight_kg ?? '';
+    }
+    syncHangingWeightField(form);
     form.querySelector('[name="customer_name"]').value = data.customer_name ?? '';
     form.querySelector('[name="price"]').value = data.price ?? '';
     form.querySelector('[name="advance_payment"]').value = data.advance_payment ?? '';
@@ -378,6 +405,10 @@ function loadOrderExtras(form, data) {
     const frameShape = form.querySelector('[name="frame_shape"]');
     if (frameShape) frameShape.value = data.frame_shape ?? '';
 
+    const weightKg = form.querySelector('[name="weight_kg"]');
+    if (weightKg) weightKg.value = data.weight_kg ?? '';
+
+    syncHangingWeightField(form);
     expandOrderExtrasIfNeeded(form, data);
 }
 
@@ -501,7 +532,19 @@ async function updateOrderPricing(form) {
             lines.push(`Гръб: ${pricing.back_sqm} кв.м. → ${pricing.back_cost.toFixed(2)} €`);
         }
         if (pricing.hanging_cost > 0) {
-            lines.push(`Окачване → ${pricing.hanging_cost.toFixed(2)} €`);
+            const hanging = pricing.hanging;
+            let hangingText = 'Окачване';
+            if (hanging && hanging.uses_weight_tiers) {
+                const parts = [];
+                if (hanging.tier_label) parts.push(hanging.tier_label);
+                if (hanging.unit_price) parts.push(`${hanging.unit_price.toFixed(2)} €/л.м.`);
+                if (hanging.weight_kg) parts.push(`${hanging.weight_kg} kg`);
+                if (hanging.linear_meters > 0) parts.push(`${hanging.linear_meters.toFixed(2)} л.м.`);
+                if (parts.length > 0) {
+                    hangingText += `: ${parts.join(', ')}`;
+                }
+            }
+            lines.push(`${hangingText} → ${pricing.hanging_cost.toFixed(2)} €`);
         }
         if (pricing.passepartout) {
             const pp = pricing.passepartout;
@@ -701,6 +744,7 @@ document.addEventListener('DOMContentLoaded', function () {
             || el.name === 'passepartout_id'
             || el.name === 'back'
             || el.name === 'hanging'
+            || el.name === 'weight_kg'
             || el.name === 'profile'
             || el.name === 'frame_count'
             || el.name === 'passepartout_openings'
@@ -718,16 +762,24 @@ document.addEventListener('DOMContentLoaded', function () {
 
     document.querySelectorAll('.order-form').forEach((form) => {
         bindAutoPrice(form);
+        syncHangingWeightField(form);
         if (!form.dataset.autoPrice) {
             form.dataset.autoPrice = '1';
         }
 
         form.addEventListener('input', function (event) {
+            if (event.target && event.target.name === 'hanging') {
+                syncHangingWeightField(form);
+            }
             if (shouldRecalculatePrice(event)) {
                 updateOrderPricing(form);
             }
         });
+
         form.addEventListener('change', function (event) {
+            if (event.target && event.target.name === 'hanging') {
+                syncHangingWeightField(form);
+            }
             if (shouldRecalculatePrice(event)) {
                 updateOrderPricing(form);
             }
@@ -743,6 +795,14 @@ document.addEventListener('DOMContentLoaded', function () {
             const priceInput = form.querySelector('[name="price"]');
             if (priceInput) priceInput.value = '';
             expandOrderExtrasIfNeeded(form, null);
+            syncHangingWeightField(form);
+        });
+    }
+
+    const editOrderModal = document.getElementById('editOrderModal');
+    if (editOrderModal) {
+        editOrderModal.addEventListener('shown.bs.modal', () => {
+            syncHangingWeightField(document.getElementById('editOrderForm'));
         });
     }
 
@@ -750,7 +810,9 @@ document.addEventListener('DOMContentLoaded', function () {
     if (subOrderModal) {
         subOrderModal.addEventListener('show.bs.modal', () => {
             const form = document.getElementById('addSubOrderForm');
-            if (form) expandOrderExtrasIfNeeded(form, null);
+            if (!form) return;
+            expandOrderExtrasIfNeeded(form, null);
+            syncHangingWeightField(form);
         });
     }
 

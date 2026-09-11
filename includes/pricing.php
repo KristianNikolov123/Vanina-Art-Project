@@ -511,19 +511,53 @@ function apply_order_price_modifiers(PDO $conn, array $order, float $subtotal, f
     ];
 }
 
-function calculate_hanging_cost(PDO $conn, string $name, float $widthCm, float $heightCm, int $frameCount): float
-{
+function calculate_hanging_pricing(
+    PDO $conn,
+    string $name,
+    float $widthCm,
+    float $heightCm,
+    int $frameCount,
+    float $weightKg = 0.0
+): array {
+    $empty = [
+        'cost' => 0.0,
+        'unit_price' => 0.0,
+        'linear_meters' => 0.0,
+        'tier_label' => null,
+        'weight_kg' => $weightKg > 0 ? round($weightKg, 2) : null,
+        'uses_weight_tiers' => false,
+        'min_per_piece' => 0.0,
+    ];
+
     $item = get_catalog_item_by_name($conn, 'hanging_options', $name);
     if (!$item || $frameCount < 1) {
-        return 0;
+        return $empty;
     }
 
     $unitPrice = (float)$item['price'];
     $minPerPiece = (float)($item['min_price'] ?? 0);
+    $tierLabel = null;
+    $usesWeightTiers = false;
+
+    if (is_vrazka_hanging($name) && ($item['pricing_unit'] ?? 'piece') === 'lm') {
+        $tier = resolve_vrazka_weight_tier($conn, $weightKg);
+        if ($tier) {
+            $unitPrice = (float)$tier['price_per_lm'];
+            $tierLabel = $tier['label'];
+            $usesWeightTiers = true;
+        }
+    }
 
     if ($widthCm <= 0 || $heightCm <= 0) {
         $chargedPerPiece = ($minPerPiece > 0 && $unitPrice < $minPerPiece) ? $minPerPiece : $unitPrice;
-        return round($chargedPerPiece * $frameCount, 2);
+
+        return array_merge($empty, [
+            'cost' => round($chargedPerPiece * $frameCount, 2),
+            'unit_price' => $unitPrice,
+            'tier_label' => $tierLabel,
+            'uses_weight_tiers' => $usesWeightTiers,
+            'min_per_piece' => $minPerPiece,
+        ]);
     }
 
     if (($item['pricing_unit'] ?? 'piece') === 'lm') {
@@ -533,12 +567,34 @@ function calculate_hanging_cost(PDO $conn, string $name, float $widthCm, float $
             ? $minPerPiece
             : $calculatedPerPiece;
 
-        return round($chargedPerPiece * $frameCount, 2);
+        return array_merge($empty, [
+            'cost' => round($chargedPerPiece * $frameCount, 2),
+            'unit_price' => $unitPrice,
+            'linear_meters' => round($lmPerPiece * $frameCount, 2),
+            'tier_label' => $tierLabel,
+            'uses_weight_tiers' => $usesWeightTiers,
+            'min_per_piece' => $minPerPiece,
+        ]);
     }
 
     $chargedPerPiece = ($minPerPiece > 0 && $unitPrice < $minPerPiece) ? $minPerPiece : $unitPrice;
 
-    return round($chargedPerPiece * $frameCount, 2);
+    return array_merge($empty, [
+        'cost' => round($chargedPerPiece * $frameCount, 2),
+        'unit_price' => $unitPrice,
+        'min_per_piece' => $minPerPiece,
+    ]);
+}
+
+function calculate_hanging_cost(
+    PDO $conn,
+    string $name,
+    float $widthCm,
+    float $heightCm,
+    int $frameCount,
+    float $weightKg = 0.0
+): float {
+    return calculate_hanging_pricing($conn, $name, $widthCm, $heightCm, $frameCount, $weightKg)['cost'];
 }
 
 function calculate_frame_labor_minimum(PDO $conn, ?array $mainProfile, int $frameCount): float
@@ -1143,9 +1199,12 @@ function calculate_order_pricing(PDO $conn, array $order): array
     }
 
     $hangingCost = 0.0;
+    $hangingDetail = null;
     $hangingName = trim($order['hanging'] ?? '');
     if ($hangingName !== '') {
-        $hangingCost = calculate_hanging_cost($conn, $hangingName, $width, $height, $frameCount);
+        $weightKg = max(0, (float)($order['weight_kg'] ?? 0));
+        $hangingDetail = calculate_hanging_pricing($conn, $hangingName, $width, $height, $frameCount, $weightKg);
+        $hangingCost = $hangingDetail['cost'];
     }
 
     $passepartout = calculate_passepartout_billing($conn, $order);
@@ -1188,6 +1247,7 @@ function calculate_order_pricing(PDO $conn, array $order): array
         'back_cost' => $backCost,
         'back_sqm' => round($backSqm, 4),
         'hanging_cost' => $hangingCost,
+        'hanging' => $hangingDetail,
         'passepartout' => $passepartout,
         'passepartout_openings' => $openings,
         'passepartout_material_cost' => round($passepartoutMaterialCost, 2),

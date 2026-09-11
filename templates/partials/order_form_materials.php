@@ -59,12 +59,17 @@ $additionalProfilesId = $additionalProfilesId ?? 'additionalProfiles';
     </div>
     <div class="col-md-6 mb-3">
         <label class="form-label">Окачване</label>
-        <select class="form-select order-price-trigger" name="hanging">
+        <select class="form-select order-price-trigger" name="hanging" id="<?= e($additionalProfilesId) ?>_hanging">
             <option value=""></option>
             <?php foreach ($hanging_options as $option): ?>
             <option value="<?= e($option['name']) ?>"><?= e($option['name']) ?></option>
             <?php endforeach; ?>
         </select>
+        <div class="hanging-weight-field mt-2 d-none">
+            <label class="form-label mb-1">Тегло за връзка (kg)</label>
+            <input type="number" class="form-control order-price-trigger" name="weight_kg" step="0.1" min="0" placeholder="напр. 12">
+            <div class="form-text">Задължително при „Връзка“ — определя €/л.м. (Склад → Окачване).</div>
+        </div>
     </div>
 </div>
 <div class="row">
