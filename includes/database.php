@@ -259,8 +259,31 @@ function ensure_catalog_schema(PDO $conn): void
         }
     }
 
+    ensure_price_list_rules_schema($conn);
     seed_price_list_catalog($conn);
     ensure_passepartout_tier_pricing_schema($conn);
+}
+
+function ensure_price_list_rules_schema(PDO $conn): void
+{
+    $isMysql = $conn->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql';
+    if ($isMysql) {
+        $conn->exec('
+            CREATE TABLE IF NOT EXISTS price_list_rules (
+                rule_key VARCHAR(50) PRIMARY KEY,
+                sort_order INT NOT NULL DEFAULT 0,
+                content TEXT NOT NULL
+            ) ENGINE=InnoDB
+        ');
+    } else {
+        $conn->exec('
+            CREATE TABLE IF NOT EXISTS price_list_rules (
+                rule_key TEXT PRIMARY KEY,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                content TEXT NOT NULL
+            )
+        ');
+    }
 }
 
 function ensure_passepartout_tier_pricing_schema(PDO $conn): void

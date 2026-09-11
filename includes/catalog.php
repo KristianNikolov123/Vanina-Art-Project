@@ -118,9 +118,223 @@ function get_all_pricing_settings(PDO $conn): array
     return $grouped;
 }
 
+function pricing_setting_unit_suffix(string $key): string
+{
+    if (str_contains($key, 'percent')) {
+        return '%';
+    }
+    if (in_array($key, ['frame_shape_labor_ellipse', 'frame_shape_labor_circle', 'frame_shape_material_factor'], true)) {
+        return '×';
+    }
+
+    return '€';
+}
+
+function update_pricing_setting_value(PDO $conn, string $key, float $value): void
+{
+    $stmt = $conn->prepare('UPDATE pricing_settings SET setting_value = ? WHERE setting_key = ?');
+    $stmt->execute([$value, $key]);
+}
+
+function passepartout_kind_tier_setting_key(string $kindKey, int $tierIndex): string
+{
+    return "pp_kind_{$kindKey}_tier_{$tierIndex}";
+}
+
+function get_price_list_rule_definitions(): array
+{
+    return [
+        ['key' => 'fir', 'sort' => 1],
+        ['key' => 'wide_profile', 'sort' => 2],
+        ['key' => 'frame_labor', 'sort' => 3],
+        ['key' => 'metal_client', 'sort' => 4],
+        ['key' => 'passepartout', 'sort' => 5],
+        ['key' => 'discounts', 'sort' => 6],
+        ['key' => 'urgent', 'sort' => 7],
+    ];
+}
+
+function format_price_list_rule_amount(float $value): string
+{
+    return number_format($value, 2, '.', '');
+}
+
+function build_default_price_list_rule_content(PDO $conn, string $ruleKey): string
+{
+    switch ($ruleKey) {
+        case 'fir':
+            return 'Фира (материал) — 2×(ш+в)/100 + ширина×8/100 л.м. на рамка (фирата е извън скобите); само при фирмен материал';
+        case 'wide_profile':
+            return 'Широк профил (≥10 см) — страна над 2.5 м се фактурира като 3 м';
+        case 'frame_labor':
+            return sprintf(
+                'Труд (дърво) — %s + %s × ширина на профила (см), мин. %s €/бр.; страна над 150 см +%s €; над 200 см +%s €',
+                format_price_list_rule_amount(get_pricing_setting($conn, 'frame_labor_base', 2.78)),
+                format_price_list_rule_amount(get_pricing_setting($conn, 'frame_labor_per_profile_cm', 0.50)),
+                format_price_list_rule_amount(get_pricing_setting($conn, 'frame_labor_min', 3.54)),
+                format_price_list_rule_amount(get_pricing_setting($conn, 'frame_surcharge_side_150', 2.54)),
+                format_price_list_rule_amount(get_pricing_setting($conn, 'frame_surcharge_side_200', 6.09))
+            );
+        case 'metal_client':
+            return sprintf(
+                'Метален профил — фиксиран труд %s €/бр.; материал на клиент — %s €/бр.',
+                format_price_list_rule_amount(get_pricing_setting($conn, 'frame_labor_metal', 5.07)),
+                format_price_list_rule_amount(get_pricing_setting($conn, 'frame_labor_client_material', 15.27))
+            );
+        case 'passepartout':
+            return sprintf(
+                'Паспарту — 6 ценови вида (виж таблицата по-горе) + рязане %s €/бр., всеки допълнителен отвор +%s €; сложно рязане +50%% (мин. %s €/бр.)',
+                format_price_list_rule_amount(get_pricing_setting($conn, 'passepartout_cutting_labor', 1.84)),
+                format_price_list_rule_amount(get_pricing_setting($conn, 'passepartout_multi_opening', 1.22)),
+                format_price_list_rule_amount(get_pricing_setting($conn, 'passepartout_complex_min', 6.10))
+            );
+        case 'discounts':
+            return sprintf(
+                'Отстъпки — автоматично −%s%% (над %s €) / −%s%% (над %s €); ученик −%s%%',
+                format_price_list_rule_amount(get_pricing_setting($conn, 'volume_discount_5_percent', 5)),
+                format_price_list_rule_amount(get_pricing_setting($conn, 'volume_discount_5_threshold', 255.64)),
+                format_price_list_rule_amount(get_pricing_setting($conn, 'volume_discount_10_percent', 10)),
+                format_price_list_rule_amount(get_pricing_setting($conn, 'volume_discount_10_threshold', 510.20)),
+                format_price_list_rule_amount(get_pricing_setting($conn, 'student_discount_percent', 10))
+            );
+        case 'urgent':
+            return sprintf(
+                'Спешна — +%s%% върху сумата след отстъпките',
+                format_price_list_rule_amount(get_pricing_setting($conn, 'urgent_surcharge_percent', 50))
+            );
+        default:
+            return '';
+    }
+}
+
+function seed_price_list_rules(PDO $conn): void
+{
+    ensure_price_list_rules_schema($conn);
+
+    $isMysql = $conn->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql';
+    $sql = $isMysql
+        ? 'INSERT INTO price_list_rules (rule_key, sort_order, content) VALUES (?, ?, ?)'
+        : 'INSERT INTO price_list_rules (rule_key, sort_order, content) VALUES (?, ?, ?)';
+
+    $insert = $conn->prepare($sql);
+    $check = $conn->prepare('SELECT COUNT(*) FROM price_list_rules WHERE rule_key = ?');
+
+    foreach (get_price_list_rule_definitions() as $definition) {
+        $check->execute([$definition['key']]);
+        if ((int)$check->fetchColumn() > 0) {
+            continue;
+        }
+
+        $insert->execute([
+            $definition['key'],
+            $definition['sort'],
+            build_default_price_list_rule_content($conn, $definition['key']),
+        ]);
+    }
+}
+
+function get_price_list_rules(PDO $conn): array
+{
+    seed_price_list_rules($conn);
+    $rows = $conn->query('SELECT rule_key, sort_order, content FROM price_list_rules ORDER BY sort_order, rule_key')->fetchAll();
+
+    return array_map(static function (array $row): array {
+        return [
+            'key' => $row['rule_key'],
+            'sort_order' => (int)$row['sort_order'],
+            'content' => (string)$row['content'],
+        ];
+    }, $rows);
+}
+
+function save_price_list_rules_from_post(PDO $conn, array $post): int
+{
+    if (empty($post['price_list_rules']) || !is_array($post['price_list_rules'])) {
+        return 0;
+    }
+
+    $allowedKeys = array_column(get_price_list_rule_definitions(), 'key');
+    $stmt = $conn->prepare('UPDATE price_list_rules SET content = ? WHERE rule_key = ?');
+    $updated = 0;
+
+    foreach ($post['price_list_rules'] as $ruleKey => $content) {
+        if (!in_array($ruleKey, $allowedKeys, true)) {
+            continue;
+        }
+        $text = trim((string)$content);
+        if ($text === '') {
+            continue;
+        }
+        $stmt->execute([$text, $ruleKey]);
+        $updated++;
+    }
+
+    return $updated;
+}
+
+function save_services_pricing_from_post(PDO $conn, array $post): array
+{
+    $counts = ['settings' => 0, 'services' => 0, 'pp_tiers' => 0, 'rules' => 0];
+
+    if (!empty($post['pricing']) && is_array($post['pricing'])) {
+        foreach ($post['pricing'] as $key => $value) {
+            if (!is_string($key) || !preg_match('/^[a-z0-9_]+$/', $key)) {
+                continue;
+            }
+            update_pricing_setting_value($conn, $key, (float)str_replace(',', '.', trim((string)$value)));
+            $counts['settings']++;
+        }
+    }
+
+    if (!empty($post['services']) && is_array($post['services'])) {
+        $stmt = $conn->prepare('UPDATE services SET price = ?, min_price = ? WHERE id = ?');
+        foreach ($post['services'] as $id => $row) {
+            $serviceId = (int)$id;
+            if ($serviceId <= 0 || !is_array($row)) {
+                continue;
+            }
+            $price = (float)str_replace(',', '.', trim((string)($row['price'] ?? 0)));
+            $minPrice = (float)str_replace(',', '.', trim((string)($row['min_price'] ?? 0)));
+            $stmt->execute([$price, $minPrice, $serviceId]);
+            $counts['services']++;
+        }
+    }
+
+    if (!empty($post['pp_kind']) && is_array($post['pp_kind'])) {
+        $allowedKinds = array_keys(get_passepartout_price_kind_definition_defaults());
+        foreach ($post['pp_kind'] as $kindKey => $tiers) {
+            if (!in_array($kindKey, $allowedKinds, true) || !is_array($tiers)) {
+                continue;
+            }
+            for ($tierIndex = 1; $tierIndex <= 4; $tierIndex++) {
+                if (!array_key_exists($tierIndex, $tiers) && !array_key_exists((string)$tierIndex, $tiers)) {
+                    continue;
+                }
+                $raw = $tiers[$tierIndex] ?? $tiers[(string)$tierIndex] ?? null;
+                if ($raw === null) {
+                    continue;
+                }
+                $settingKey = passepartout_kind_tier_setting_key($kindKey, $tierIndex);
+                update_pricing_setting_value(
+                    $conn,
+                    $settingKey,
+                    (float)str_replace(',', '.', trim((string)$raw))
+                );
+                $counts['pp_tiers']++;
+            }
+        }
+    }
+
+    $counts['rules'] = save_price_list_rules_from_post($conn, $post);
+
+    return $counts;
+}
+
 function seed_price_list_catalog(PDO $conn): void
 {
     seed_pricing_settings($conn);
+    seed_price_list_rules($conn);
+    seed_passepartout_kind_tier_settings($conn);
     seed_glasses_from_price_list($conn);
     seed_backs_from_price_list($conn);
     seed_hanging_from_price_list($conn);
@@ -333,7 +547,7 @@ function get_passepartout_tier_scheme_labels(): array
     ];
 }
 
-function get_passepartout_price_kind_definitions(): array
+function get_passepartout_price_kind_definition_defaults(): array
 {
     return [
         'type1' => [
@@ -381,6 +595,55 @@ function get_passepartout_price_kind_definitions(): array
     ];
 }
 
+function seed_passepartout_kind_tier_settings(PDO $conn): void
+{
+    $isMysql = $conn->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql';
+    $sql = $isMysql
+        ? 'INSERT INTO pricing_settings (setting_key, setting_value, label, category) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE label = VALUES(label), category = VALUES(category)'
+        : 'INSERT INTO pricing_settings (setting_key, setting_value, label, category) VALUES (?, ?, ?, ?) ON CONFLICT(setting_key) DO UPDATE SET label = excluded.label, category = excluded.category';
+
+    $insert = $conn->prepare($sql);
+    $check = $conn->prepare('SELECT COUNT(*) FROM pricing_settings WHERE setting_key = ?');
+
+    foreach (get_passepartout_price_kind_definition_defaults() as $kindKey => $definition) {
+        for ($tierIndex = 1; $tierIndex <= 4; $tierIndex++) {
+            $settingKey = passepartout_kind_tier_setting_key($kindKey, $tierIndex);
+            $defaultPrice = (float)$definition['tiers'][$tierIndex - 1];
+            $label = sprintf(
+                '%s — %s (€/бр.)',
+                $definition['label'],
+                (get_passepartout_tier_scheme_labels()[$definition['scheme']] ?? [])[$tierIndex - 1] ?? ('ниво ' . $tierIndex)
+            );
+
+            $check->execute([$settingKey]);
+            if ((int)$check->fetchColumn() === 0) {
+                $insert->execute([$settingKey, $defaultPrice, $label, 'passepartout_material']);
+            }
+        }
+    }
+}
+
+function get_passepartout_price_kind_definitions(?PDO $conn = null): array
+{
+    if ($conn === null) {
+        $conn = get_db_connection();
+    }
+
+    $definitions = [];
+    foreach (get_passepartout_price_kind_definition_defaults() as $kindKey => $definition) {
+        $tiers = [];
+        for ($tierIndex = 1; $tierIndex <= 4; $tierIndex++) {
+            $settingKey = passepartout_kind_tier_setting_key($kindKey, $tierIndex);
+            $defaultPrice = (float)$definition['tiers'][$tierIndex - 1];
+            $tiers[] = get_pricing_setting($conn, $settingKey, $defaultPrice);
+        }
+
+        $definitions[$kindKey] = array_merge($definition, ['tiers' => $tiers]);
+    }
+
+    return $definitions;
+}
+
 function describe_passepartout_price_kind(string $kindKey): string
 {
     $definitions = get_passepartout_price_kind_definitions();
@@ -399,10 +662,10 @@ function describe_passepartout_price_kind(string $kindKey): string
     return ($definition['summary'] ?? '') . ' ' . implode('; ', $parts);
 }
 
-function get_passepartout_price_kinds_for_display(): array
+function get_passepartout_price_kinds_for_display(?PDO $conn = null): array
 {
     $rows = [];
-    foreach (get_passepartout_price_kind_definitions() as $kindKey => $definition) {
+    foreach (get_passepartout_price_kind_definitions($conn) as $kindKey => $definition) {
         $tierLabels = get_passepartout_tier_scheme_labels()[$definition['scheme']] ?? [];
         $tiers = [];
         foreach ($definition['tiers'] as $index => $price) {

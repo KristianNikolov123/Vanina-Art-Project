@@ -26,6 +26,7 @@ function url_for(string $route, array $params = []): string
         'add_passepartout' => '/add_passepartout',
         'bulk_edit_profiles' => '/bulk_edit_profiles',
         'bulk_edit_passepartouts' => '/bulk_edit_passepartouts',
+        'save_services' => '/save_services',
         'verify_email' => '/verify',
     ];
 

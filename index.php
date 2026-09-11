@@ -226,6 +226,8 @@ if ($uri === '/hanging') {
 if ($uri === '/services') {
     require_login();
     $conn = get_db_connection();
+    seed_passepartout_kind_tier_settings($conn);
+    seed_price_list_rules($conn);
     $pricing_settings = get_all_pricing_settings($conn);
     $services = get_all_services($conn);
     render('services.php', [
@@ -233,9 +235,40 @@ if ($uri === '/services') {
         'current_page' => 'services',
         'pricing_settings' => $pricing_settings,
         'services' => $services,
-        'passepartout_price_kinds' => get_passepartout_price_kinds_for_display(),
+        'passepartout_price_kinds' => get_passepartout_price_kinds_for_display($conn),
+        'price_list_rules' => get_price_list_rules($conn),
+        'edit_mode' => isset($_GET['edit']),
+        'extra_js' => 'services.js',
     ]);
     exit;
+}
+
+if ($uri === '/save_services' && $method === 'POST') {
+    require_login();
+    $conn = get_db_connection();
+    seed_passepartout_kind_tier_settings($conn);
+    seed_price_list_rules($conn);
+    try {
+        $conn->beginTransaction();
+        $counts = save_services_pricing_from_post($conn, $_POST);
+        $conn->commit();
+        flash(
+            sprintf(
+                'Запазени са %d тарифи за труд, %d услуги, %d цени по вид паспарту и %d правила.',
+                $counts['settings'],
+                $counts['services'],
+                $counts['pp_tiers'],
+                $counts['rules']
+            ),
+            'success'
+        );
+    } catch (Exception $e) {
+        if ($conn->inTransaction()) {
+            $conn->rollBack();
+        }
+        flash('Грешка при запазване: ' . $e->getMessage(), 'danger');
+    }
+    redirect('/services');
 }
 
 if ($uri === '/passepartouts') {

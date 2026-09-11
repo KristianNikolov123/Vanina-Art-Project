@@ -6,7 +6,13 @@
     margin-bottom: 20px;
 }
 
-.table th {
+.table thead.table-dark th {
+    background-color: #212529;
+    color: #fff;
+    border-color: #32383e;
+}
+
+.table thead:not(.table-dark) th {
     background-color: #f8f9fa;
 }
 
