@@ -87,10 +87,10 @@
                         <tr>
                             <td class="text-muted"><?= e($tier['label']) ?></td>
                             <td>
-                                <input type="number" class="form-control form-control-sm" name="hanging_weight_tiers[<?= (int)$tier['id'] ?>][max_weight_kg]" value="<?= e(number_format((float)$tier['max_weight_kg'], 2, '.', '')) ?>" step="0.1" min="0.1" required>
+                                <input type="text" inputmode="decimal" autocomplete="off" class="form-control form-control-sm" name="hanging_weight_tiers[<?= (int)$tier['id'] ?>][max_weight_kg]" value="<?= e(number_format((float)$tier['max_weight_kg'], 2, '.', '')) ?>" step="0.1" min="0.1" required>
                             </td>
                             <td>
-                                <input type="number" class="form-control form-control-sm" name="hanging_weight_tiers[<?= (int)$tier['id'] ?>][price_per_lm]" value="<?= e(number_format((float)$tier['price_per_lm'], 2, '.', '')) ?>" step="0.01" min="0" required>
+                                <input type="text" inputmode="decimal" autocomplete="off" class="form-control form-control-sm" name="hanging_weight_tiers[<?= (int)$tier['id'] ?>][price_per_lm]" value="<?= e(number_format((float)$tier['price_per_lm'], 2, '.', '')) ?>" step="0.01" min="0" required>
                             </td>
                         </tr>
                         <?php endforeach; ?>
@@ -105,7 +105,7 @@
 </div>
 <?php endif; ?>
 
-<div class="modal fade" id="addHangingModal" tabindex="-1">
+<div class="modal" data-bs-scroll="true" id="addHangingModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
@@ -120,7 +120,7 @@
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Цена (€)</label>
-                        <input type="number" class="form-control" name="price" step="0.01" min="0" required>
+                        <input type="text" inputmode="decimal" autocomplete="off" class="form-control" name="price" step="0.01" min="0" required>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Единица</label>
@@ -131,11 +131,11 @@
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Мин. цена (€/бр.)</label>
-                        <input type="number" class="form-control" name="min_price" step="0.01" min="0" value="0">
+                        <input type="text" inputmode="decimal" autocomplete="off" class="form-control" name="min_price" step="0.01" min="0" value="0">
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Наличност</label>
-                        <input type="number" class="form-control" name="stock" min="0" value="0">
+                        <input type="text" inputmode="decimal" autocomplete="off" class="form-control" name="stock" min="0" value="0">
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -147,7 +147,7 @@
     </div>
 </div>
 
-<div class="modal fade" id="editHangingModal" tabindex="-1">
+<div class="modal" data-bs-scroll="true" id="editHangingModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
@@ -162,7 +162,7 @@
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Цена (€)</label>
-                        <input type="number" class="form-control" name="price" step="0.01" min="0" required>
+                        <input type="text" inputmode="decimal" autocomplete="off" class="form-control" name="price" step="0.01" min="0" required>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Единица</label>
@@ -173,11 +173,11 @@
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Мин. цена (€/бр.)</label>
-                        <input type="number" class="form-control" name="min_price" step="0.01" min="0">
+                        <input type="text" inputmode="decimal" autocomplete="off" class="form-control" name="min_price" step="0.01" min="0">
                     </div>
                     <div class="mb-3" id="editHangingStockGroup">
                         <label class="form-label">Наличност</label>
-                        <input type="number" class="form-control" name="stock" id="editHangingStock" min="0">
+                        <input type="text" inputmode="decimal" autocomplete="off" class="form-control" name="stock" id="editHangingStock" min="0">
                         <div class="form-text" id="editHangingStockHint" style="display: none;">
                             Обща наличност закачалки (споделена с „Закачалка" и „Две закачалки").
                         </div>

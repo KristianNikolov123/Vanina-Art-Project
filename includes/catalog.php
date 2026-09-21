@@ -519,7 +519,8 @@ function sync_catalog_min_prices(PDO $conn): void
         'Консервационно' => 3.98,
         'Музейно' => 10.18,
         'Огледало' => 3.05,
-        'Плексиглас' => 1.84,
+        'Плексиглас 2 mm' => 1.84,
+        'Плексиглас 3 mm' => 1.84,
     ];
     $stmt = $conn->prepare('UPDATE glasses SET min_price = ? WHERE name = ? AND (min_price IS NULL OR min_price = 0)');
     foreach ($glassMins as $name => $minPrice) {
@@ -584,15 +585,36 @@ function seed_pricing_settings(PDO $conn): void
     }
 }
 
+function migrate_plexiglass_glass_names(PDO $conn): void
+{
+    $legacyName = 'Плексиглас';
+    $twoMmName = 'Плексиглас 2 mm';
+
+    $check = $conn->prepare('SELECT COUNT(*) FROM glasses WHERE name = ?');
+    $check->execute([$legacyName]);
+    $hasLegacy = (int)$check->fetchColumn() > 0;
+
+    $check->execute([$twoMmName]);
+    $hasTwoMm = (int)$check->fetchColumn() > 0;
+
+    if ($hasLegacy && !$hasTwoMm) {
+        $conn->prepare('UPDATE glasses SET name = ? WHERE name = ?')->execute([$twoMmName, $legacyName]);
+        $conn->prepare('UPDATE orders SET glass = ? WHERE glass = ?')->execute([$twoMmName, $legacyName]);
+    }
+}
+
 function seed_glasses_from_price_list(PDO $conn): void
 {
+    migrate_plexiglass_glass_names($conn);
+
     $items = [
         ['Нормално', 15.95, 1.02],
         ['Антирефлексно', 22.70, 1.22],
         ['Консервационно', 63.20, 3.98],
         ['Музейно', 161.32, 10.18],
         ['Огледало', 24.43, 3.05],
-        ['Плексиглас', 21.37, 1.84],
+        ['Плексиглас 2 mm', 21.37, 1.84],
+        ['Плексиглас 3 mm', 25.64, 1.84],
     ];
 
     upsert_catalog_items($conn, 'glasses', $items, true);

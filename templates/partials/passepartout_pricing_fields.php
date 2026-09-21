@@ -40,7 +40,7 @@ $pricingId = static function (string $field) use ($pricingIdSuffix): string {
             <label class="form-label small pp-tier-label" data-pp-tier-label="<?= $tier ?>">
                 Ниво <?= $tier ?>
             </label>
-            <input type="number" class="form-control form-control-sm"
+            <input type="text" inputmode="decimal" autocomplete="off" class="form-control form-control-sm"
                    id="<?= $pricingId('price_tier_' . $tier) ?>"
                    name="<?= e($pricingField('price_tier_' . $tier)) ?>"
                    data-field="price_tier_<?= $tier ?>"

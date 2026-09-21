@@ -1,9 +1,19 @@
-<?php include __DIR__ . '/partials/warehouse_nav.php'; ?>
+<?php
+include __DIR__ . '/partials/warehouse_nav.php';
+$profileSeriesLetters = collect_profile_series_letters($profiles);
+?>
 
 <div class="container-fluid px-0">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h1>Профили</h1>
-        <div class="d-flex gap-2">
+        <div class="d-flex gap-2 flex-wrap">
+            <form id="raiseProfilePricesForm" action="<?= url_for('profiles_raise_prices_10') ?>" method="post" class="d-inline">
+                <div class="bulk-ids-container"></div>
+                <button type="submit" class="btn btn-outline-warning" id="raiseProfilePricesBtn"
+                        title="+10% и закръгляне нагоре до 0.10 €">
+                    <i class="fas fa-arrow-trend-up"></i> Цени +10%
+                </button>
+            </form>
             <button type="button" class="btn btn-outline-primary" id="bulkEditProfilesBtn" disabled>
                 <i class="fas fa-edit"></i> Групово<span id="bulkProfilesCount"></span>
             </button>
@@ -13,12 +23,33 @@
         </div>
     </div>
 
-    <div class="bulk-toolbar">
+    <div class="bulk-toolbar profile-filters-toolbar">
         <div class="bulk-toolbar__search input-group">
             <input type="text" id="searchInput" class="form-control" placeholder="Търси по име...">
-            <button class="btn btn-outline-secondary" type="button">
+            <button class="btn btn-outline-secondary" type="button" aria-hidden="true" tabindex="-1">
                 <i class="fas fa-search"></i>
             </button>
+        </div>
+        <div class="profile-series-filters" role="group" aria-label="Серия профил">
+            <span class="profile-filters-label text-muted small">Серия:</span>
+            <button type="button" class="btn btn-sm btn-secondary profile-series-btn active" data-series="">
+                Всички
+            </button>
+            <?php foreach ($profileSeriesLetters as $letter): ?>
+            <button type="button" class="btn btn-sm btn-outline-secondary profile-series-btn" data-series="<?= e($letter) ?>">
+                <?= e($letter) ?>
+            </button>
+            <?php endforeach; ?>
+        </div>
+        <div class="profile-sort-wrap">
+            <label class="profile-filters-label text-muted small mb-0" for="profileSortSelect">Подредба:</label>
+            <select id="profileSortSelect" class="form-select form-select-sm">
+                <option value="name">Име (А–Я)</option>
+                <option value="number-asc">Номер ↑</option>
+                <option value="number-desc">Номер ↓</option>
+                <option value="price-asc">Цена ↑</option>
+                <option value="price-desc">Цена ↓</option>
+            </select>
         </div>
     </div>
 
@@ -37,9 +68,18 @@
                     <th>Действия</th>
                 </tr>
             </thead>
-            <tbody>
+            <tbody id="profilesTableBody">
                 <?php foreach ($profiles as $profile): ?>
-                <tr data-profile-id="<?= (int)$profile['id'] ?>" data-profile-type="<?= e($profile['profile_type'] ?? 'wood') ?>">
+                <?php
+                $profileName = $profile['name'] ?? '';
+                $seriesLetter = profile_name_series_letter($profileName);
+                $sortNumber = profile_name_sort_number($profileName);
+                ?>
+                <tr data-profile-id="<?= (int)$profile['id'] ?>"
+                    data-profile-type="<?= e($profile['profile_type'] ?? 'wood') ?>"
+                    data-series="<?= e($seriesLetter) ?>"
+                    data-sort-number="<?= (int)$sortNumber ?>"
+                    data-sort-price="<?= e(number_format((float)$profile['price'], 4, '.', '')) ?>">
                     <td class="bulk-col">
                         <input type="checkbox" class="form-check-input bulk-row-checkbox" value="<?= (int)$profile['id'] ?>">
                     </td>
@@ -67,7 +107,7 @@
     </div>
 </div>
 
-<div class="modal fade" id="bulkEditProfilesModal" tabindex="-1">
+<div class="modal" data-bs-scroll="true" id="bulkEditProfilesModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
@@ -85,7 +125,7 @@
                             <label class="form-check-label" for="bulk_apply_price">Цена</label>
                         </div>
                         <label class="bulk-field__label text-muted" for="bulk_price">€/л.м.</label>
-                        <input type="number" class="form-control bulk-field__value" name="price" id="bulk_price" step="0.01" disabled>
+                        <input type="text" inputmode="decimal" autocomplete="off" class="form-control bulk-field__value" name="price" id="bulk_price" step="0.01" disabled>
                     </div>
 
                     <div class="bulk-field">
@@ -97,7 +137,7 @@
                             <option value="set">Задай</option>
                             <option value="add">Добави/извади</option>
                         </select>
-                        <input type="number" class="form-control bulk-field__value" name="stock" step="1" disabled>
+                        <input type="text" inputmode="decimal" autocomplete="off" class="form-control bulk-field__value" name="stock" step="1" disabled>
                     </div>
 
                     <div class="bulk-field">
@@ -106,7 +146,7 @@
                             <label class="form-check-label" for="bulk_apply_width">Ширина</label>
                         </div>
                         <label class="bulk-field__label text-muted" for="bulk_width_cm">см</label>
-                        <input type="number" class="form-control bulk-field__value" name="width_cm" id="bulk_width_cm" step="0.1" min="0" disabled>
+                        <input type="text" inputmode="decimal" autocomplete="off" class="form-control bulk-field__value" name="width_cm" id="bulk_width_cm" step="0.1" min="0" disabled>
                     </div>
 
                     <div class="bulk-field">
@@ -130,7 +170,7 @@
     </div>
 </div>
 
-<div class="modal fade" id="addProfileModal" tabindex="-1">
+<div class="modal" data-bs-scroll="true" id="addProfileModal" tabindex="-1">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
@@ -162,15 +202,15 @@
                                 </div>
                                 <div class="col-md-4">
                                     <label class="form-label">Ширина (см)</label>
-                                    <input type="number" class="form-control" name="profile_rows[0][width_cm]" data-field="width_cm" step="0.1" min="0">
+                                    <input type="text" inputmode="decimal" autocomplete="off" class="form-control" name="profile_rows[0][width_cm]" data-field="width_cm" step="0.1" min="0">
                                 </div>
                                 <div class="col-md-4">
                                     <label class="form-label">Цена (€/л.м.)</label>
-                                    <input type="number" class="form-control" name="profile_rows[0][price]" data-field="price" step="0.01" required>
+                                    <input type="text" inputmode="decimal" autocomplete="off" class="form-control" name="profile_rows[0][price]" data-field="price" step="0.01" required>
                                 </div>
                                 <div class="col-md-4">
                                     <label class="form-label">Наличност (л.м.)</label>
-                                    <input type="number" class="form-control" name="profile_rows[0][stock]" data-field="stock" required>
+                                    <input type="text" inputmode="decimal" autocomplete="off" class="form-control" name="profile_rows[0][stock]" data-field="stock" required>
                                 </div>
                             </div>
                         </div>
@@ -189,7 +229,7 @@
     </div>
 </div>
 
-<div class="modal fade" id="editProfileModal" tabindex="-1">
+<div class="modal" data-bs-scroll="true" id="editProfileModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
@@ -212,15 +252,15 @@
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Ширина на профила (см)</label>
-                        <input type="number" class="form-control" name="width_cm" step="0.1" min="0">
+                        <input type="text" inputmode="decimal" autocomplete="off" class="form-control" name="width_cm" step="0.1" min="0">
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Цена (€/л.м.)</label>
-                        <input type="number" class="form-control" name="price" step="0.01" required>
+                        <input type="text" inputmode="decimal" autocomplete="off" class="form-control" name="price" step="0.01" required>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Наличност (л.м.)</label>
-                        <input type="number" class="form-control" name="stock" required>
+                        <input type="text" inputmode="decimal" autocomplete="off" class="form-control" name="stock" required>
                     </div>
                 </form>
             </div>

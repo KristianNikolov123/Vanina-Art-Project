@@ -1,18 +1,32 @@
 <!DOCTYPE html>
-<html lang="bg">
+<html lang="bg" data-bs-theme="light">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?= e($title ?? '') ?> - Ванина Арт</title>
+    <meta name="color-scheme" content="light">
+    <meta name="supported-color-schemes" content="light">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <link href="<?= static_url('css/glasses.css') ?>" rel="stylesheet">
     <?php
     $extraCssFiles = is_array($extra_css ?? null) ? $extra_css : (($extra_css ?? '') !== '' ? [$extra_css] : []);
     foreach ($extraCssFiles as $cssFile):
     ?>
     <link rel="stylesheet" href="<?= static_url('css/' . $cssFile) ?>">
     <?php endforeach; ?>
+    <link href="<?= static_url('css/glasses.css') ?>" rel="stylesheet">
+    <link href="<?= static_url('css/forms.css') ?>" rel="stylesheet">
+    <style id="vanina-form-fields">
+        html { color-scheme: light; }
+        input.form-control:not([type=checkbox]):not([type=radio]):not([type=hidden]):not([type=file]),
+        textarea.form-control, textarea {
+            color-scheme: light;
+            cursor: url("<?= static_url('cursors/text-ibeam.svg') ?>") 16 16, text;
+            color: #212529;
+            caret-color: #000;
+            background-color: #fff;
+        }
+    </style>
 </head>
 <body>
     <nav class="navbar navbar-expand-lg navbar-dark">

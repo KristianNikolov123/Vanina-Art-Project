@@ -35,26 +35,40 @@
     margin-right: 10px;
 }
 
-.nav-link {
-    color: rgba(255,255,255,0.9) !important;
+.navbar-dark .navbar-nav .nav-link {
+    color: rgba(255, 255, 255, 0.9);
     font-weight: 500;
-    padding: 0.5rem 1rem !important;
-    transition: all 0.3s ease;
 }
 
-.nav-link:hover {
-    color: #fff !important;
-    transform: translateY(-2px);
+.navbar-dark .navbar-nav .nav-link:hover,
+.navbar-dark .navbar-nav .nav-link:focus,
+.navbar-dark .navbar-nav .nav-link.active {
+    color: #fff;
 }
 
-.nav-link.active {
-    color: #fff !important;
-    background: rgba(255,255,255,0.1);
+.navbar-dark .navbar-nav .nav-link.active {
+    background: rgba(255, 255, 255, 0.1);
     border-radius: 5px;
 }
 
-.nav-link i {
+.navbar-dark .navbar-brand,
+.navbar-dark .navbar-brand:hover,
+.navbar-dark .navbar-brand:focus {
+    color: #fff;
+}
+
+.navbar-dark .nav-link i {
     margin-right: 5px;
+}
+
+/* Warehouse sub-nav (not in top navbar — must not inherit white nav-link styles) */
+.warehouse-nav .nav-link {
+    color: #495057;
+}
+
+.warehouse-nav .nav-link.active {
+    color: #fff;
+    background-color: #0d6efd;
 }
 
 /* Home Page Styles */
@@ -68,11 +82,24 @@
 .card {
     border: none;
     border-radius: 15px;
-    transition: transform 0.3s ease;
 }
 
-.card:hover {
-    transform: translateY(-5px);
+/* Hover lift only on warehouse hub cards — not on every .card */
+/* No transform on cards — Chromium hides miscolored caret until hover/click repaints */
+.warehouse-card {
+    transition: box-shadow 0.2s ease;
+}
+
+.warehouse-card:hover {
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.12);
+}
+
+.hero-section .card {
+    transition: box-shadow 0.2s ease;
+}
+
+.hero-section .card:hover {
+    box-shadow: 0 0.5rem 1.25rem rgba(0, 0, 0, 0.1);
 }
 
 .fa-3x {
@@ -96,4 +123,24 @@ h6 {
 
 p {
     color: #7f8c8d;
-} 
+}
+
+.login-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(33, 37, 41, 0.55);
+    pointer-events: auto;
+}
+
+.login-modal {
+    background: #fff;
+    border-radius: 12px;
+    padding: 2rem;
+    max-width: 400px;
+    text-align: center;
+    box-shadow: 0 0.5rem 1.5rem rgba(0, 0, 0, 0.2);
+}

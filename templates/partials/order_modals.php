@@ -1,4 +1,4 @@
-<div class="modal fade" id="addOrderModal" tabindex="-1">
+<div class="modal" data-bs-scroll="true" id="addOrderModal" tabindex="-1">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
@@ -14,11 +14,11 @@
                         </div>
                         <div class="col-md-3 mb-3">
                             <label class="form-label">Ширина (cm)</label>
-                            <input type="number" class="form-control order-price-trigger" name="width" step="0.1">
+                            <input type="text" inputmode="decimal" autocomplete="off" class="form-control order-price-trigger" name="width" step="0.1">
                         </div>
                         <div class="col-md-3 mb-3">
                             <label class="form-label">Височина (cm)</label>
-                            <input type="number" class="form-control order-price-trigger" name="height" step="0.1">
+                            <input type="text" inputmode="decimal" autocomplete="off" class="form-control order-price-trigger" name="height" step="0.1">
                         </div>
                     </div>
                     <?php $additionalProfilesId = 'additionalProfiles'; include __DIR__ . '/order_form_materials.php'; ?>
@@ -36,16 +36,16 @@
                     <div class="row">
                         <div class="col-md-4 mb-3">
                             <label class="form-label">Цена</label>
-                            <input type="number" class="form-control" name="price" step="0.01">
+                            <input type="text" inputmode="decimal" autocomplete="off" class="form-control" name="price" step="0.01">
                             <div class="form-text">Оставете празно за автоматично изчисление</div>
                         </div>
                         <div class="col-md-4 mb-3">
                             <label class="form-label">Аванс</label>
-                            <input type="number" class="form-control" name="advance_payment" step="0.01">
+                            <input type="text" inputmode="decimal" autocomplete="off" class="form-control" name="advance_payment" step="0.01">
                         </div>
                         <div class="col-md-4 mb-3">
                             <label class="form-label">Ръчна отстъпка (€)</label>
-                            <input type="number" class="form-control order-price-trigger" name="discount" step="0.01">
+                            <input type="text" inputmode="decimal" autocomplete="off" class="form-control order-price-trigger" name="discount" step="0.01">
                             <div class="form-text">Обемна (−5%/−10%) и ученическа се смятат автоматично</div>
                         </div>
                     </div>
@@ -78,7 +78,7 @@
     </div>
 </div>
 
-<div class="modal fade" id="editOrderModal" tabindex="-1">
+<div class="modal" data-bs-scroll="true" id="editOrderModal" tabindex="-1">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
@@ -94,11 +94,11 @@
                         </div>
                         <div class="col-md-3 mb-3">
                             <label class="form-label">Ширина (cm)</label>
-                            <input type="number" class="form-control order-price-trigger" name="width" step="0.1">
+                            <input type="text" inputmode="decimal" autocomplete="off" class="form-control order-price-trigger" name="width" step="0.1">
                         </div>
                         <div class="col-md-3 mb-3">
                             <label class="form-label">Височина (cm)</label>
-                            <input type="number" class="form-control order-price-trigger" name="height" step="0.1">
+                            <input type="text" inputmode="decimal" autocomplete="off" class="form-control order-price-trigger" name="height" step="0.1">
                         </div>
                     </div>
                     <?php $additionalProfilesId = 'additionalProfilesEdit'; include __DIR__ . '/order_form_materials.php'; ?>
@@ -116,16 +116,16 @@
                     <div class="row">
                         <div class="col-md-4 mb-3">
                             <label class="form-label">Цена</label>
-                            <input type="number" class="form-control" name="price" step="0.01">
+                            <input type="text" inputmode="decimal" autocomplete="off" class="form-control" name="price" step="0.01">
                             <div class="form-text">Обновява се автоматично при промяна на материалите</div>
                         </div>
                         <div class="col-md-4 mb-3">
                             <label class="form-label">Аванс</label>
-                            <input type="number" class="form-control" name="advance_payment" step="0.01">
+                            <input type="text" inputmode="decimal" autocomplete="off" class="form-control" name="advance_payment" step="0.01">
                         </div>
                         <div class="col-md-4 mb-3">
                             <label class="form-label">Ръчна отстъпка (€)</label>
-                            <input type="number" class="form-control order-price-trigger" name="discount" step="0.01">
+                            <input type="text" inputmode="decimal" autocomplete="off" class="form-control order-price-trigger" name="discount" step="0.01">
                             <div class="form-text">Обемна (−5%/−10%) и ученическа се смятат автоматично</div>
                         </div>
                     </div>
@@ -153,7 +153,7 @@
     </div>
 </div>
 
-<div class="modal fade" id="addSubOrderModal" tabindex="-1">
+<div class="modal" data-bs-scroll="true" id="addSubOrderModal" tabindex="-1">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
@@ -169,11 +169,11 @@
                         </div>
                         <div class="col-md-3 mb-3">
                             <label class="form-label">Ширина (cm)</label>
-                            <input type="number" class="form-control order-price-trigger" name="width" step="0.1">
+                            <input type="text" inputmode="decimal" autocomplete="off" class="form-control order-price-trigger" name="width" step="0.1">
                         </div>
                         <div class="col-md-3 mb-3">
                             <label class="form-label">Височина (cm)</label>
-                            <input type="number" class="form-control order-price-trigger" name="height" step="0.1">
+                            <input type="text" inputmode="decimal" autocomplete="off" class="form-control order-price-trigger" name="height" step="0.1">
                         </div>
                     </div>
                     <?php $additionalProfilesId = 'additionalProfilesSub'; include __DIR__ . '/order_form_materials.php'; ?>
@@ -185,18 +185,18 @@
                         </div>
                         <div class="col-md-6 mb-3">
                             <label class="form-label">Цена</label>
-                            <input type="number" class="form-control" name="price" step="0.01">
+                            <input type="text" inputmode="decimal" autocomplete="off" class="form-control" name="price" step="0.01">
                             <div class="form-text">Оставете празно за автоматично изчисление</div>
                         </div>
                     </div>
                     <div class="row">
                         <div class="col-md-4 mb-3">
                             <label class="form-label">Аванс</label>
-                            <input type="number" class="form-control" name="advance_payment" step="0.01">
+                            <input type="text" inputmode="decimal" autocomplete="off" class="form-control" name="advance_payment" step="0.01">
                         </div>
                         <div class="col-md-4 mb-3">
                             <label class="form-label">Ръчна отстъпка (€)</label>
-                            <input type="number" class="form-control order-price-trigger" name="discount" step="0.01">
+                            <input type="text" inputmode="decimal" autocomplete="off" class="form-control order-price-trigger" name="discount" step="0.01">
                             <div class="form-text">Обемна (−5%/−10%) и ученическа се смятат автоматично</div>
                         </div>
                         <div class="col-md-4 mb-3">

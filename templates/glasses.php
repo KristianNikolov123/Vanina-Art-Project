@@ -55,7 +55,7 @@
     </div>
 </div>
 
-<div class="modal fade" id="addGlassModal" tabindex="-1">
+<div class="modal" data-bs-scroll="true" id="addGlassModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
@@ -70,15 +70,15 @@
                     </div>
                     <div class="form-group">
                         <label for="price" class="form-label">Цена (€/кв.м.)</label>
-                        <input type="number" class="form-control" id="price" name="price" step="0.01" min="0" required>
+                        <input type="text" inputmode="decimal" autocomplete="off" class="form-control" id="price" name="price" step="0.01" min="0" required>
                     </div>
                     <div class="form-group">
                         <label for="min_price" class="form-label">Мин. цена (€/бр.)</label>
-                        <input type="number" class="form-control" id="min_price" name="min_price" step="0.01" min="0" value="0">
+                        <input type="text" inputmode="decimal" autocomplete="off" class="form-control" id="min_price" name="min_price" step="0.01" min="0" value="0">
                     </div>
                     <div class="form-group">
                         <label for="stock" class="form-label">Наличност (кв.м.)</label>
-                        <input type="number" class="form-control" id="stock" name="stock" min="0" required>
+                        <input type="text" inputmode="decimal" autocomplete="off" class="form-control" id="stock" name="stock" min="0" required>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -90,7 +90,7 @@
     </div>
 </div>
 
-<div class="modal fade" id="editGlassModal" tabindex="-1">
+<div class="modal" data-bs-scroll="true" id="editGlassModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
@@ -105,15 +105,15 @@
                     </div>
                     <div class="form-group">
                         <label for="edit_price" class="form-label">Цена (€/кв.м.)</label>
-                        <input type="number" class="form-control" id="edit_price" name="price" step="0.01" min="0" required>
+                        <input type="text" inputmode="decimal" autocomplete="off" class="form-control" id="edit_price" name="price" step="0.01" min="0" required>
                     </div>
                     <div class="form-group">
                         <label for="edit_min_price" class="form-label">Мин. цена (€/бр.)</label>
-                        <input type="number" class="form-control" id="edit_min_price" name="min_price" step="0.01" min="0">
+                        <input type="text" inputmode="decimal" autocomplete="off" class="form-control" id="edit_min_price" name="min_price" step="0.01" min="0">
                     </div>
                     <div class="form-group">
                         <label for="edit_stock" class="form-label">Наличност (кв.м.)</label>
-                        <input type="number" class="form-control" id="edit_stock" name="stock" min="0" required>
+                        <input type="text" inputmode="decimal" autocomplete="off" class="form-control" id="edit_stock" name="stock" min="0" required>
                     </div>
                 </div>
                 <div class="modal-footer">

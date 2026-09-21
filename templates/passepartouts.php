@@ -80,7 +80,7 @@
     </div>
 </div>
 
-<div class="modal fade" id="bulkEditPassepartoutsModal" tabindex="-1">
+<div class="modal" data-bs-scroll="true" id="bulkEditPassepartoutsModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
@@ -98,7 +98,7 @@
                             <label class="form-check-label" for="bulk_pp_apply_price">Цена</label>
                         </div>
                         <label class="bulk-field__label text-muted" for="bulk_pp_price">€/кв.м.</label>
-                        <input type="number" class="form-control bulk-field__value" name="price" id="bulk_pp_price" step="0.01" min="0" disabled>
+                        <input type="text" inputmode="decimal" autocomplete="off" class="form-control bulk-field__value" name="price" id="bulk_pp_price" step="0.01" min="0" disabled>
                     </div>
 
                     <div class="mb-2">
@@ -115,7 +115,7 @@
                                     <option value="set">Задай</option>
                                     <option value="add">Добави/извади</option>
                                 </select>
-                                <input type="number" class="form-control bulk-field__value" name="sheet_stock[<?= $sheetId ?>]" min="0" step="0.01" disabled>
+                                <input type="text" inputmode="decimal" autocomplete="off" class="form-control bulk-field__value" name="sheet_stock[<?= $sheetId ?>]" min="0" step="0.01" disabled>
                             </div>
                             <?php endforeach; ?>
                         </div>
@@ -130,7 +130,7 @@
     </div>
 </div>
 
-<div class="modal fade" id="addPassepartoutModal" tabindex="-1">
+<div class="modal" data-bs-scroll="true" id="addPassepartoutModal" tabindex="-1">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
@@ -165,7 +165,7 @@
                                     <?php $sheetId = (int)$sheetType['id']; ?>
                                     <div class="col-md-4">
                                         <label class="form-label small"><?= e($sheetType['name']) ?></label>
-                                        <input type="number" class="form-control form-control-sm"
+                                        <input type="text" inputmode="decimal" autocomplete="off" class="form-control form-control-sm"
                                                name="passepartout_rows[0][sheet_stock][<?= $sheetId ?>]"
                                                data-field="sheet_stock_<?= $sheetId ?>"
                                                min="0" step="0.01" value="0">
@@ -189,7 +189,7 @@
     </div>
 </div>
 
-<div class="modal fade" id="editPassepartoutModal" tabindex="-1">
+<div class="modal" data-bs-scroll="true" id="editPassepartoutModal" tabindex="-1">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
@@ -212,7 +212,7 @@
                         <?php foreach ($sheet_types as $sheetType): ?>
                         <div class="mb-2">
                             <label class="form-label small text-muted"><?= e($sheetType['name']) ?> (бр.)</label>
-                            <input type="number" class="form-control edit-sheet-stock" data-sheet-id="<?= (int)$sheetType['id'] ?>" name="sheet_stock[<?= (int)$sheetType['id'] ?>]" min="0" step="0.01" value="0">
+                            <input type="text" inputmode="decimal" autocomplete="off" class="form-control edit-sheet-stock" data-sheet-id="<?= (int)$sheetType['id'] ?>" name="sheet_stock[<?= (int)$sheetType['id'] ?>]" min="0" step="0.01" value="0">
                         </div>
                         <?php endforeach; ?>
                     </div>

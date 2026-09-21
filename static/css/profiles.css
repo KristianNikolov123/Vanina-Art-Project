@@ -6,6 +6,44 @@
     margin-bottom: 20px;
 }
 
+.profile-filters-toolbar {
+    align-items: flex-start;
+}
+
+.profile-series-filters {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35rem;
+    flex: 1 1 280px;
+}
+
+.profile-filters-label {
+    margin-right: 0.25rem;
+    white-space: nowrap;
+}
+
+.profile-series-btn {
+    min-width: 2.25rem;
+    font-weight: 600;
+}
+
+.profile-series-btn.active {
+    pointer-events: none;
+}
+
+.profile-sort-wrap {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex: 0 0 auto;
+}
+
+.profile-sort-wrap .form-select {
+    width: auto;
+    min-width: 9.5rem;
+}
+
 .table thead.table-dark th {
     background-color: #212529;
     color: #fff;

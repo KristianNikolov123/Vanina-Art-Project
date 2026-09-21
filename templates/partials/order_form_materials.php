@@ -19,7 +19,7 @@ $additionalProfilesId = $additionalProfilesId ?? 'additionalProfiles';
     </div>
     <div class="col-md-3 mb-3">
         <label class="form-label">Брой рамки</label>
-        <input type="number" class="form-control order-price-trigger" name="frame_count" value="1" min="1">
+        <input type="text" inputmode="decimal" autocomplete="off" class="form-control order-price-trigger" name="frame_count" value="1" min="1">
     </div>
 </div>
 <datalist id="profileCatalog">
@@ -67,7 +67,7 @@ $additionalProfilesId = $additionalProfilesId ?? 'additionalProfiles';
         </select>
         <div class="hanging-weight-field mt-2 d-none">
             <label class="form-label mb-1">Тегло за връзка (kg)</label>
-            <input type="number" class="form-control order-price-trigger" name="weight_kg" step="0.1" min="0" placeholder="напр. 12">
+            <input type="text" inputmode="decimal" autocomplete="off" class="form-control order-price-trigger" name="weight_kg" step="0.1" min="0" placeholder="напр. 12">
             <div class="form-text">Задължително при „Връзка“ — определя €/л.м. (Склад → Окачване).</div>
         </div>
     </div>

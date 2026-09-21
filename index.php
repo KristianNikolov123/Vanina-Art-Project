@@ -597,6 +597,29 @@ if ($uri === '/bulk_edit_profiles' && $method === 'POST') {
     redirect('/profiles');
 }
 
+if ($uri === '/profiles_raise_prices_10' && $method === 'POST') {
+    require_login();
+    $ids = parse_bulk_ids_from_post();
+    $conn = get_db_connection();
+    try {
+        $conn->beginTransaction();
+        $updated = raise_profile_prices_by_ten_percent($conn, $ids);
+        $conn->commit();
+        flash(
+            $ids === []
+                ? "Повишени са цените (+10%, закръгляне нагоре до 0.10 €) на {$updated} профила."
+                : "Повишени са цените (+10%, закръгляне нагоре до 0.10 €) на {$updated} избрани профила.",
+            'success'
+        );
+    } catch (Exception $e) {
+        if ($conn->inTransaction()) {
+            $conn->rollBack();
+        }
+        flash('Грешка при повишаване на цените: ' . $e->getMessage(), 'danger');
+    }
+    redirect('/profiles');
+}
+
 // --- Glass actions ---
 
 if ($uri === '/add_glass' && $method === 'POST') {

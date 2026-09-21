@@ -36,12 +36,12 @@ $collapseId = 'orderExtras_' . $extrasId;
             <div class="row">
                 <div class="col-md-3 mb-3">
                     <label class="form-label">Отвори паспарту</label>
-                    <input type="number" class="form-control order-price-trigger" name="passepartout_openings" value="1" min="1">
+                    <input type="text" inputmode="decimal" autocomplete="off" class="form-control order-price-trigger" name="passepartout_openings" value="1" min="1">
                     <div class="form-text">Първият включен, +1.22 €/отвор</div>
                 </div>
                 <div class="col-md-3 mb-3">
                     <label class="form-label">Км транспорт</label>
-                    <input type="number" class="form-control order-price-trigger transport-km-input" name="transport_km" step="0.1" min="0" placeholder="При транспорт">
+                    <input type="text" inputmode="decimal" autocomplete="off" class="form-control order-price-trigger transport-km-input" name="transport_km" step="0.1" min="0" placeholder="При транспорт">
                 </div>
                 <div class="col-md-6 mb-3">
                     <label class="form-label d-block">Паспарту и отстъпки</label>

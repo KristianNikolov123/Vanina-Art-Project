@@ -49,7 +49,7 @@
     </table>
 </div>
 
-<div class="modal fade" id="addBackModal" tabindex="-1">
+<div class="modal" data-bs-scroll="true" id="addBackModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
@@ -64,15 +64,15 @@
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Цена (€/кв.м.)</label>
-                        <input type="number" class="form-control" name="price" step="0.01" min="0" required>
+                        <input type="text" inputmode="decimal" autocomplete="off" class="form-control" name="price" step="0.01" min="0" required>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Мин. цена (€/бр.)</label>
-                        <input type="number" class="form-control" name="min_price" step="0.01" min="0" value="0">
+                        <input type="text" inputmode="decimal" autocomplete="off" class="form-control" name="min_price" step="0.01" min="0" value="0">
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Наличност (кв.м.)</label>
-                        <input type="number" class="form-control" name="stock" step="0.01" min="0" value="0">
+                        <input type="text" inputmode="decimal" autocomplete="off" class="form-control" name="stock" step="0.01" min="0" value="0">
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -84,7 +84,7 @@
     </div>
 </div>
 
-<div class="modal fade" id="editBackModal" tabindex="-1">
+<div class="modal" data-bs-scroll="true" id="editBackModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
@@ -99,15 +99,15 @@
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Цена (€/кв.м.)</label>
-                        <input type="number" class="form-control" name="price" step="0.01" min="0" required>
+                        <input type="text" inputmode="decimal" autocomplete="off" class="form-control" name="price" step="0.01" min="0" required>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Мин. цена (€/бр.)</label>
-                        <input type="number" class="form-control" name="min_price" step="0.01" min="0">
+                        <input type="text" inputmode="decimal" autocomplete="off" class="form-control" name="min_price" step="0.01" min="0">
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Наличност (кв.м.)</label>
-                        <input type="number" class="form-control" name="stock" step="0.01" min="0">
+                        <input type="text" inputmode="decimal" autocomplete="off" class="form-control" name="stock" step="0.01" min="0">
                     </div>
                 </div>
                 <div class="modal-footer">

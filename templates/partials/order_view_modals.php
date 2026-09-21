@@ -1,4 +1,4 @@
-<div class="modal fade" id="viewOrderModal" tabindex="-1">
+<div class="modal" data-bs-scroll="true" id="viewOrderModal" tabindex="-1">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
@@ -97,7 +97,7 @@
     </div>
 </div>
 
-<div class="modal fade" id="descriptionModal" tabindex="-1">
+<div class="modal" data-bs-scroll="true" id="descriptionModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">

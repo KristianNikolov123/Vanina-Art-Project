@@ -25,6 +25,7 @@ function url_for(string $route, array $params = []): string
         'add_glass' => '/add_glass',
         'add_passepartout' => '/add_passepartout',
         'bulk_edit_profiles' => '/bulk_edit_profiles',
+        'profiles_raise_prices_10' => '/profiles_raise_prices_10',
         'bulk_edit_passepartouts' => '/bulk_edit_passepartouts',
         'save_services' => '/save_services',
         'save_hanging_weight_tiers' => '/save_hanging_weight_tiers',
@@ -43,7 +44,10 @@ function url_for(string $route, array $params = []): string
 
 function static_url(string $filename): string
 {
-    return BASE_PATH . '/static/' . $filename;
+    $path = ROOT_PATH . '/static/' . ltrim(str_replace('\\', '/', $filename), '/');
+    $version = is_file($path) ? (string)filemtime($path) : (string)time();
+
+    return BASE_PATH . '/static/' . $filename . '?v=' . $version;
 }
 
 function flash(string $message, string $category = 'info'): void
@@ -129,6 +133,8 @@ function short_glass(?string $value): string
         'Музейно' => 'Музейно',
         'Консервационно' => 'Конс',
         'Огледало' => 'Огледало',
+        'Плексиглас 2 mm' => 'Плекси 2',
+        'Плексиглас 3 mm' => 'Плекси 3',
         'Плексиглас' => 'Плекси',
     ];
     return $mapping[$value] ?? ($value ?? '');
@@ -607,6 +613,76 @@ function parse_bulk_ids_from_post(): array
     }
 
     return array_values(array_unique(array_filter(array_map('intval', $ids), fn($id) => $id > 0)));
+}
+
+/** +10% then round up to the next 0.10 € (10.61 → 10.70, 10.60 unchanged). */
+function profile_name_series_letter(string $name): string
+{
+    $name = trim($name);
+    if ($name === '') {
+        return '';
+    }
+
+    return mb_strtoupper(mb_substr($name, 0, 1, 'UTF-8'), 'UTF-8');
+}
+
+function profile_name_sort_number(string $name): int
+{
+    if (preg_match('/(\d+)/u', $name, $matches)) {
+        return (int)$matches[1];
+    }
+
+    return 0;
+}
+
+/** Unique first letters from profile names (Д, И, В, …), sorted. */
+function collect_profile_series_letters(array $profiles): array
+{
+    $letters = [];
+    foreach ($profiles as $profile) {
+        $letter = profile_name_series_letter($profile['name'] ?? '');
+        if ($letter !== '') {
+            $letters[$letter] = true;
+        }
+    }
+
+    $list = array_keys($letters);
+    usort($list, static function (string $a, string $b): int {
+        return strcmp(mb_strtolower($a, 'UTF-8'), mb_strtolower($b, 'UTF-8'));
+    });
+
+    return $list;
+}
+
+function profile_price_raise_ten_percent(float $price): float
+{
+    $raised = $price * 1.10;
+    $rounded = ceil(($raised - 1e-9) * 10) / 10;
+
+    return round($rounded, 2);
+}
+
+function raise_profile_prices_by_ten_percent(PDO $conn, array $ids = []): int
+{
+    if ($ids === []) {
+        $rows = $conn->query('SELECT id, price FROM profiles ORDER BY id')->fetchAll();
+    } else {
+        $placeholders = implode(',', array_fill(0, count($ids), '?'));
+        $stmt = $conn->prepare("SELECT id, price FROM profiles WHERE id IN ({$placeholders}) ORDER BY id");
+        $stmt->execute($ids);
+        $rows = $stmt->fetchAll();
+    }
+
+    $update = $conn->prepare('UPDATE profiles SET price = ? WHERE id = ?');
+    $updated = 0;
+
+    foreach ($rows as $row) {
+        $newPrice = profile_price_raise_ten_percent((float)$row['price']);
+        $update->execute([$newPrice, (int)$row['id']]);
+        $updated++;
+    }
+
+    return $updated;
 }
 
 function apply_bulk_numeric_change(float $current, string $mode, float $value): float

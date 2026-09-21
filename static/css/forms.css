@@ -1,0 +1,39 @@
+/* Windows dark + Chrome: native I-beam stays white on white inputs; use dark SVG cursor on fields only */
+
+html {
+    color-scheme: light;
+}
+
+:root {
+    --vanina-ibeam: url("../cursors/text-ibeam.svg") 16 16, text;
+}
+
+input.form-control:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="file"]):not([type="range"]):not([type="color"]):not([type="button"]):not([type="submit"]):not([type="reset"]),
+textarea.form-control,
+textarea {
+    color-scheme: light;
+    cursor: var(--vanina-ibeam);
+    color: #212529;
+    caret-color: #000;
+    background-color: #fff;
+    -webkit-text-fill-color: #212529;
+}
+
+select.form-select {
+    color-scheme: light;
+    color: #212529;
+    background-color: #fff;
+}
+
+@media (prefers-color-scheme: dark) {
+    input.form-control:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="file"]):not([type="range"]):not([type="color"]):not([type="button"]):not([type="submit"]):not([type="reset"]),
+    textarea.form-control,
+    textarea {
+        color-scheme: light;
+        cursor: var(--vanina-ibeam);
+        color: #212529;
+        caret-color: #000;
+        background-color: #fff;
+        -webkit-text-fill-color: #212529;
+    }
+}

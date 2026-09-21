@@ -132,7 +132,7 @@ function initMultiAddForm(config) {
                         input.value = '';
                     } else if (input.tagName === 'SELECT' && input.dataset.field === 'profile_type') {
                         input.value = 'wood';
-                    } else if (input.type === 'number') {
+                    } else if (input.inputMode === 'decimal' || input.dataset.field === 'stock' || input.dataset.field === 'price' || input.dataset.field === 'width_cm') {
                         input.value = '0';
                     } else {
                         input.value = '';

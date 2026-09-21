@@ -73,7 +73,7 @@ $price_list_rules = $price_list_rules ?? [];
                         <?php if ($edit_mode): ?>
                         <div class="input-group input-group-sm justify-content-end">
                             <input
-                                type="number"
+                                type="text" inputmode="decimal" autocomplete="off"
                                 class="form-control text-end"
                                 name="pricing[<?= e($settingKey) ?>]"
                                 value="<?= e(number_format((float)$setting['setting_value'], 2, '.', '')) ?>"
@@ -134,7 +134,7 @@ $price_list_rules = $price_list_rules ?? [];
                                     <?php if ($edit_mode): ?>
                                     <div class="input-group input-group-sm" style="max-width: 8rem;">
                                         <input
-                                            type="number"
+                                            type="text" inputmode="decimal" autocomplete="off"
                                             class="form-control text-end"
                                             name="pp_kind[<?= e($kind['key']) ?>][<?= (int)$tierNumber ?>]"
                                             value="<?= e(number_format((float)$tier['price'], 2, '.', '')) ?>"
@@ -184,7 +184,7 @@ $price_list_rules = $price_list_rules ?? [];
                         <?php if ($edit_mode): ?>
                         <div class="input-group input-group-sm">
                             <input
-                                type="number"
+                                type="text" inputmode="decimal" autocomplete="off"
                                 class="form-control text-end"
                                 name="services[<?= (int)$service['id'] ?>][price]"
                                 value="<?= e(number_format((float)$service['price'], 2, '.', '')) ?>"
@@ -203,7 +203,7 @@ $price_list_rules = $price_list_rules ?? [];
                         <?php if ($edit_mode): ?>
                         <div class="input-group input-group-sm">
                             <input
-                                type="number"
+                                type="text" inputmode="decimal" autocomplete="off"
                                 class="form-control text-end"
                                 name="services[<?= (int)$service['id'] ?>][min_price]"
                                 value="<?= e(number_format((float)($service['min_price'] ?? 0), 2, '.', '')) ?>"
