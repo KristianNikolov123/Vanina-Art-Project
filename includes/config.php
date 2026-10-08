@@ -25,8 +25,11 @@ define('BASE_PATH', rtrim($_ENV['BASE_PATH'] ?? '', '/'));
 define('SECRET_KEY', $_ENV['SECRET_KEY'] ?? 'change-me-in-production');
 define('ADMIN_EMAIL', $_ENV['ADMIN_EMAIL'] ?? '');
 define('ADMIN_EMAIL_PASSWORD', $_ENV['ADMIN_EMAIL_PASSWORD'] ?? '');
-define('SMTP_SERVER', 'smtp.gmail.com');
+define('SMTP_SERVER', $_ENV['SMTP_SERVER'] ?? 'smtp.gmail.com');
 define('SMTP_PORT', (int)($_ENV['SMTP_PORT'] ?? 465));
+define('MAIL_TRANSPORT', strtolower($_ENV['MAIL_TRANSPORT'] ?? 'auto'));
+define('MAIL_FROM', $_ENV['MAIL_FROM'] ?? '');
+define('SMTP_USER', $_ENV['SMTP_USER'] ?? (($_ENV['MAIL_FROM'] ?? '') !== '' ? $_ENV['MAIL_FROM'] : ($_ENV['ADMIN_EMAIL'] ?? '')));
 
 require_once ROOT_PATH . '/includes/database.php';
 require_once ROOT_PATH . '/includes/User.php';
