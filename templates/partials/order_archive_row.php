@@ -17,7 +17,12 @@ $extrasTitle = $hasExtras ? 'Допълнителни опции: ' . implode(',
     <td><span class="width"><?= e($order['width']) ?></span>x<span class="height"><?= e($order['height']) ?></span> cm</td>
     <td class="profile"><?= e($order['profile']) ?></td>
     <td class="additional-profiles"><?= e($order['additional_profiles']) ?></td>
-    <td class="customer-name"><?= e($order['customer_name']) ?></td>
+    <td class="customer-name">
+        <?= e($order['customer_name']) ?>
+        <?php if (!empty(trim($order['customer_phone'] ?? ''))): ?>
+            <small class="text-muted d-block customer-phone"><?= e($order['customer_phone']) ?></small>
+        <?php endif; ?>
+    </td>
     <td class="price"><?= e($order['price']) ?></td>
     <td>
         <span class="badge <?= $order['paid'] ? 'bg-success' : 'bg-danger' ?>"><?= $order['paid'] ? 'Платена' : 'Неплатена' ?></span>

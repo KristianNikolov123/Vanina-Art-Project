@@ -247,6 +247,10 @@ function viewOrder(orderId) {
     document.getElementById('viewOrderBack').textContent = displayValue(data.back);
     document.getElementById('viewOrderHanging').textContent = displayValue(data.hanging);
     document.getElementById('viewOrderCustomer').textContent = displayValue(data.customer_name);
+    const viewPhone = document.getElementById('viewOrderPhone');
+    if (viewPhone) {
+        viewPhone.textContent = displayValue(data.customer_phone);
+    }
 
     let passepartoutText = displayValue(data.passepartout);
     if (data.passepartout_bill_width && data.passepartout_bill_height) {
@@ -334,6 +338,10 @@ function editOrder(orderId) {
     }
     syncHangingWeightField(form);
     form.querySelector('[name="customer_name"]').value = data.customer_name ?? '';
+    const customerPhone = form.querySelector('[name="customer_phone"]');
+    if (customerPhone) {
+        customerPhone.value = data.customer_phone ?? '';
+    }
     form.querySelector('[name="price"]').value = data.price ?? '';
     form.querySelector('[name="advance_payment"]').value = data.advance_payment ?? '';
     form.querySelector('[name="discount"]').value = data.discount ?? '';
@@ -640,6 +648,33 @@ function showFullDescription(description) {
     modal.show();
 }
 
+function filterExtraServices(searchInput) {
+    const panel = searchInput.closest('.extra-services-panel');
+    if (!panel) return;
+
+    const query = searchInput.value.trim().toLowerCase();
+    let visibleCount = 0;
+
+    panel.querySelectorAll('.extra-service-item').forEach((item) => {
+        const name = item.dataset.serviceName || '';
+        const category = item.closest('.extra-services-category');
+        const categoryLabel = category?.dataset.categoryLabel || '';
+        const match = !query || name.includes(query) || categoryLabel.includes(query);
+        item.classList.toggle('d-none', !match);
+        if (match) visibleCount += 1;
+    });
+
+    panel.querySelectorAll('.extra-services-category').forEach((category) => {
+        const hasVisible = category.querySelector('.extra-service-item:not(.d-none)') !== null;
+        category.classList.toggle('d-none', !hasVisible);
+    });
+
+    const emptyMsg = panel.querySelector('.extra-services-no-match');
+    if (emptyMsg) {
+        emptyMsg.classList.toggle('d-none', visibleCount > 0 || !query);
+    }
+}
+
 // Initialize tooltips and filters
 document.addEventListener('DOMContentLoaded', function () {
     const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
@@ -651,6 +686,10 @@ document.addEventListener('DOMContentLoaded', function () {
     if (searchInput) {
         searchInput.addEventListener('input', applyOrderRowVisibility);
     }
+
+    document.querySelectorAll('.extra-services-search').forEach((input) => {
+        input.addEventListener('input', () => filterExtraServices(input));
+    });
 
     const sortSelect = document.getElementById('orderSortSelect');
     if (sortSelect) {

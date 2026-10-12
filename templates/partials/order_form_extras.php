@@ -97,15 +97,22 @@ $collapseId = 'orderExtras_' . $extrasId;
             </div>
 
             <?php if (!empty($groupedServices)): ?>
-            <div class="row">
+            <div class="row extra-services-panel">
                 <div class="col-12">
-                    <label class="form-label">Допълнителни услуги</label>
-                    <div class="row">
+                    <label class="form-label" for="extraServicesSearch_<?= e($extrasId) ?>">Допълнителни услуги</label>
+                    <input type="search"
+                           class="form-control form-control-sm mb-2 extra-services-search"
+                           id="extraServicesSearch_<?= e($extrasId) ?>"
+                           placeholder="Търсене по име…"
+                           autocomplete="off">
+                    <div class="row extra-services-list">
                         <?php foreach ($groupedServices as $category => $categoryServices): ?>
-                        <div class="col-md-6 mb-2">
-                            <div class="small text-muted mb-1"><?= e($serviceCategories[$category] ?? $category) ?></div>
+                        <div class="col-md-6 mb-2 extra-services-category"
+                             data-category-label="<?= e(mb_strtolower($serviceCategories[$category] ?? $category, 'UTF-8')) ?>">
+                            <div class="small text-muted mb-1 extra-services-category-title"><?= e($serviceCategories[$category] ?? $category) ?></div>
                             <?php foreach ($categoryServices as $service): ?>
-                            <div class="form-check">
+                            <div class="form-check extra-service-item"
+                                 data-service-name="<?= e(mb_strtolower($service['name'], 'UTF-8')) ?>">
                                 <input type="checkbox" class="form-check-input order-price-trigger extra-service-check"
                                        name="extra_services[]" value="<?= (int)$service['id'] ?>"
                                        id="svc_<?= e($extrasId) ?>_<?= (int)$service['id'] ?>"
@@ -119,6 +126,7 @@ $collapseId = 'orderExtras_' . $extrasId;
                         </div>
                         <?php endforeach; ?>
                     </div>
+                    <p class="small text-muted mb-0 d-none extra-services-no-match">Няма услуги за това търсене.</p>
                 </div>
             </div>
             <?php endif; ?>

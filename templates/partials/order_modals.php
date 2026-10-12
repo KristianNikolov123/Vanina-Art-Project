@@ -24,11 +24,15 @@
                     <?php $additionalProfilesId = 'additionalProfiles'; include __DIR__ . '/order_form_materials.php'; ?>
                     <?php $extrasId = 'add'; include __DIR__ . '/order_form_extras.php'; ?>
                     <div class="row">
-                        <div class="col-md-6 mb-3">
+                        <div class="col-md-4 mb-3">
                             <label class="form-label">Име на клиент</label>
                             <input type="text" class="form-control" name="customer_name">
                         </div>
-                        <div class="col-md-6 mb-3">
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Телефон</label>
+                            <input type="tel" class="form-control" name="customer_phone" inputmode="tel" autocomplete="tel" placeholder="08…">
+                        </div>
+                        <div class="col-md-4 mb-3">
                             <label class="form-label">Описание</label>
                             <textarea class="form-control" name="description" rows="2"></textarea>
                         </div>
@@ -104,11 +108,15 @@
                     <?php $additionalProfilesId = 'additionalProfilesEdit'; include __DIR__ . '/order_form_materials.php'; ?>
                     <?php $extrasId = 'edit'; include __DIR__ . '/order_form_extras.php'; ?>
                     <div class="row">
-                        <div class="col-md-6 mb-3">
+                        <div class="col-md-4 mb-3">
                             <label class="form-label">Име на клиент</label>
                             <input type="text" class="form-control" name="customer_name">
                         </div>
-                        <div class="col-md-6 mb-3">
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Телефон</label>
+                            <input type="tel" class="form-control" name="customer_phone" inputmode="tel" autocomplete="tel" placeholder="08…">
+                        </div>
+                        <div class="col-md-4 mb-3">
                             <label class="form-label">Описание</label>
                             <textarea class="form-control" name="description" rows="2" id="editDescription"></textarea>
                         </div>

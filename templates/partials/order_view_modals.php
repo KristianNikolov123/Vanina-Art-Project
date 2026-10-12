@@ -51,11 +51,15 @@
                     </div>
                 </div>
                 <div class="row mb-3">
-                    <div class="col-md-6">
+                    <div class="col-md-4">
                         <div class="text-muted small">Клиент</div>
                         <div id="viewOrderCustomer"></div>
                     </div>
-                    <div class="col-md-6">
+                    <div class="col-md-4">
+                        <div class="text-muted small">Телефон</div>
+                        <div id="viewOrderPhone"></div>
+                    </div>
+                    <div class="col-md-4">
                         <div class="text-muted small">Статус</div>
                         <div id="viewOrderStatus"></div>
                     </div>

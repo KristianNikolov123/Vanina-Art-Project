@@ -80,6 +80,10 @@ function viewOrder(orderId) {
     }
     document.getElementById('viewOrderHanging').textContent = hangingText;
     document.getElementById('viewOrderCustomer').textContent = displayValue(data.customer_name);
+    const viewPhone = document.getElementById('viewOrderPhone');
+    if (viewPhone) {
+        viewPhone.textContent = displayValue(data.customer_phone);
+    }
 
     let passepartoutText = displayValue(data.passepartout);
     if (data.passepartout_bill_width && data.passepartout_bill_height) {

@@ -111,7 +111,12 @@
                             <td class="price"><?= e($order['price']) ?></td>
                             <td class="advance-payment"><?= e($order['advance_payment']) ?></td>
                             <td class="discount"><?= e($order['discount']) ?></td>
-                            <td class="customer-name"><?= e($order['customer_name']) ?></td>
+                            <td class="customer-name">
+                                <?= e($order['customer_name']) ?>
+                                <?php if (!empty(trim($order['customer_phone'] ?? ''))): ?>
+                                    <small class="text-muted d-block customer-phone"><?= e($order['customer_phone']) ?></small>
+                                <?php endif; ?>
+                            </td>
                             <td>
                                 <span class="badge <?= $order['paid'] ? 'bg-success' : 'bg-danger' ?>"><?= $order['paid'] ? 'Платена' : 'Неплатена' ?></span>
                                 <span class="badge <?= $order['collected'] ? 'bg-info' : 'bg-warning' ?>"><?= $order['collected'] ? 'Получена' : 'Неполучена' ?></span>

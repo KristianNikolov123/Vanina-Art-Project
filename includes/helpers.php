@@ -263,6 +263,7 @@ function order_view_data(array $order): array
         'hanging' => $order['hanging'] ?? '',
         'weight_kg' => isset($order['weight_kg']) && $order['weight_kg'] !== '' ? (float)$order['weight_kg'] : null,
         'customer_name' => $order['customer_name'] ?? '',
+        'customer_phone' => $order['customer_phone'] ?? '',
         'price' => $order['price'],
         'advance_payment' => $order['advance_payment'],
         'discount' => $order['discount'],
@@ -796,7 +797,7 @@ function get_additional_profiles(): ?string
     return null;
 }
 
-function build_order_from_post(?string $customerName = null): array
+function build_order_from_post(?string $customerName = null, ?string $customerPhone = null): array
 {
     $passepartoutId = (int)($_POST['passepartout_id'] ?? 0);
     $passepartoutName = trim($_POST['passepartout'] ?? '');
@@ -831,6 +832,7 @@ function build_order_from_post(?string $customerName = null): array
         'additional_profiles' => get_additional_profiles(),
         'frame_count' => max(1, (int)($_POST['frame_count'] ?? 1)),
         'customer_name' => $customerName ?? ($_POST['customer_name'] ?? ''),
+        'customer_phone' => $customerPhone ?? trim($_POST['customer_phone'] ?? ''),
     ];
 }
 
@@ -861,6 +863,7 @@ function order_bind_values(array $order): array
         $order['hanging'],
         $order['weight_kg'],
         $order['customer_name'],
+        $order['customer_phone'],
         $order['price'],
         $order['paid'],
         $order['collected'],
@@ -890,12 +893,12 @@ function insert_order_row(PDO $conn, array $order, int $orderNumber, int $subOrd
             order_number, sub_order_number, date, width, height, profile, glass, passepartout,
             passepartout_bill_width, passepartout_bill_height,
             passepartout_sheet_type_id, passepartout_sheet_usage,
-            back, hanging, weight_kg, customer_name, price, paid, collected,
+            back, hanging, weight_kg, customer_name, customer_phone, price, paid, collected,
             additional_profiles, frame_count, advance_payment, discount, description,
             passepartout_openings, urgent, student_discount, complex_passepartout, extra_services, transport_km,
             frame_box, frame_nonstandard, frame_shape, frame_high_complexity, client_passepartout_cutting
         ) VALUES (
-            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
         )
     ');
     $stmt->execute(array_merge([$orderNumber, $subOrderNumber], order_bind_values($order)));
@@ -908,7 +911,7 @@ function update_order_row(PDO $conn, array $order, int $orderId): void
             date = ?, width = ?, height = ?, profile = ?, glass = ?,
             passepartout = ?, passepartout_bill_width = ?, passepartout_bill_height = ?,
             passepartout_sheet_type_id = ?, passepartout_sheet_usage = ?,
-            back = ?, hanging = ?, weight_kg = ?, customer_name = ?,
+            back = ?, hanging = ?, weight_kg = ?, customer_name = ?, customer_phone = ?,
             price = ?, paid = ?, collected = ?, additional_profiles = ?,
             frame_count = ?, advance_payment = ?, discount = ?, description = ?,
             passepartout_openings = ?, urgent = ?, student_discount = ?,
@@ -920,9 +923,9 @@ function update_order_row(PDO $conn, array $order, int $orderId): void
     $stmt->execute(array_merge(order_bind_values($order), [$orderId]));
 }
 
-function prepare_order_persistence(PDO $conn, array $post, ?string $customerName = null): array
+function prepare_order_persistence(PDO $conn, array $post, ?string $customerName = null, ?string $customerPhone = null): array
 {
-    $orderData = build_order_from_post($customerName);
+    $orderData = build_order_from_post($customerName, $customerPhone);
     $stockOrder = enrich_order_pricing_fields($conn, $orderData);
 
     return [
@@ -941,6 +944,7 @@ function prepare_order_persistence(PDO $conn, array $post, ?string $customerName
         'hanging' => $post['hanging'] ?? '',
         'weight_kg' => ($post['weight_kg'] ?? '') !== '' ? max(0, (float)$post['weight_kg']) : null,
         'customer_name' => $customerName ?? ($post['customer_name'] ?? ''),
+        'customer_phone' => $customerPhone ?? trim($post['customer_phone'] ?? ''),
         'price' => resolve_order_price($conn, $orderData, $post['price'] ?? null),
         'paid' => isset($post['paid']) ? 1 : 0,
         'collected' => isset($post['collected']) ? 1 : 0,

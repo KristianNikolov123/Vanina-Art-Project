@@ -500,7 +500,12 @@ if (preg_match('#^/add_sub_order/(\d+)$#', $uri, $m) && $method === 'POST') {
 
         $conn->beginTransaction();
 
-        $order = prepare_order_persistence($conn, $_POST, $mainOrder['customer_name']);
+        $order = prepare_order_persistence(
+            $conn,
+            $_POST,
+            $mainOrder['customer_name'],
+            $mainOrder['customer_phone'] ?? null
+        );
         insert_order_row($conn, $order, (int)$mainOrder['order_number'], $subOrderNumber);
 
         deduct_stock_for_order($conn, $order['stock_order']);

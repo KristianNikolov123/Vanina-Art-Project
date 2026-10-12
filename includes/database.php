@@ -252,6 +252,7 @@ function ensure_catalog_schema(PDO $conn): void
         'frame_high_complexity' => $isMysql ? 'TINYINT(1) NOT NULL DEFAULT 0' : 'INTEGER NOT NULL DEFAULT 0',
         'client_passepartout_cutting' => $isMysql ? 'TINYINT(1) NOT NULL DEFAULT 0' : 'INTEGER NOT NULL DEFAULT 0',
         'weight_kg' => $isMysql ? 'DECIMAL(10,2) NULL' : 'REAL',
+        'customer_phone' => $isMysql ? 'VARCHAR(50) NULL' : 'TEXT',
         'deleted_at' => $isMysql ? 'DATETIME NULL' : 'TEXT',
     ];
     foreach ($orderExtraColumns as $column => $type) {
