@@ -226,6 +226,30 @@ function glass_square_meters(float $widthCm, float $heightCm, int $frameCount = 
     return ($widthCm * $heightCm / 10000) * $frameCount;
 }
 
+function frame_piece_square_meters(float $widthCm, float $heightCm): float
+{
+    if ($widthCm <= 0 || $heightCm <= 0) {
+        return 0;
+    }
+
+    return $widthCm * $heightCm / 10000;
+}
+
+function assembly_area_tier_index(float $pieceSqm): int
+{
+    if ($pieceSqm <= 0) {
+        return 0;
+    }
+    if ($pieceSqm <= 0.5) {
+        return 1;
+    }
+    if ($pieceSqm <= 0.8) {
+        return 2;
+    }
+
+    return 3;
+}
+
 function passepartout_bill_square_meters(float $billWidthCm, float $billHeightCm, int $frameCount = 1): float
 {
     if ($billWidthCm <= 0 || $billHeightCm <= 0 || $frameCount < 1) {
@@ -929,15 +953,13 @@ function calculate_passepartout_labor_cost(
         return 0.0;
     }
 
+    if (empty($order['client_passepartout_cutting'])) {
+        return 0.0;
+    }
+
     $openings = max(1, (int)($order['passepartout_openings'] ?? 1));
     $cutting = get_pricing_setting($conn, 'passepartout_cutting_labor', 1.84);
     $extraOpening = get_pricing_setting($conn, 'passepartout_multi_opening', 1.22);
-    $clientCutting = !empty($order['client_passepartout_cutting']);
-    $firmPassepartout = $passepartoutBilling !== null;
-
-    if (!$clientCutting && !$firmPassepartout) {
-        return 0.0;
-    }
 
     $labor = $cutting * $frameCount;
     if ($openings > 1) {
@@ -1164,11 +1186,22 @@ function calculate_order_pricing(PDO $conn, array $order): array
         $mainProfile = get_catalog_item_by_name($conn, 'profiles', $profileName);
     }
 
-    if ($width > 0 && $height > 0 && !empty($profileNames)) {
+    $readyFrameCost = 0.0;
+    $usesReadyFrame = !empty($order['profile_ready_frame']);
+
+    if ($width > 0 && $height > 0 && !empty($profileNames) && !$usesReadyFrame) {
         $stacked = calculate_stacked_profile_material($conn, $width, $height, $frameCount, $profileNames);
         $profileMaterialCost = $stacked['material_cost'];
         $profileMeters = $stacked['total_meters'];
         $profileLines = $stacked['lines'];
+    }
+
+    if ($usesReadyFrame) {
+        $profileMaterialCost = 0.0;
+        $profileMeters = 0.0;
+        $profileLines = [];
+        $unitReady = max(0, (float)($order['profile_ready_frame_price'] ?? 0));
+        $readyFrameCost = round($unitReady * $frameCount, 2);
     }
 
     $frameLaborCost = 0.0;
@@ -1240,7 +1273,7 @@ function calculate_order_pricing(PDO $conn, array $order): array
         $frameExtrasLines[] = ['name' => 'Висока сложност (+50%)', 'cost' => $complexityCost];
     }
 
-    $profileCost = round($profileMaterialCost + $frameLaborCost + $frameExtrasCost, 2);
+    $profileCost = round($profileMaterialCost + $frameLaborCost + $frameExtrasCost + $readyFrameCost, 2);
 
     $glassCost = 0.0;
     $glassSqm = 0.0;
@@ -1309,6 +1342,7 @@ function calculate_order_pricing(PDO $conn, array $order): array
 
     return [
         'profile_material_cost' => round($profileMaterialCost, 2),
+        'profile_ready_frame_cost' => round($readyFrameCost, 2),
         'frame_labor_cost' => $frameLaborCost,
         'profile_cost' => $profileCost,
         'profile_meters' => round($profileMeters, 2),

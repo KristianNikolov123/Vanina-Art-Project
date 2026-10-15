@@ -287,7 +287,7 @@ function build_default_price_list_rule_content(PDO $conn, string $ruleKey): stri
             );
         case 'passepartout':
             return sprintf(
-                'Паспарту — 6 ценови вида (виж таблицата по-горе) + рязане %s €/бр., всеки допълнителен отвор +%s €; сложно рязане +50%% (мин. %s €/бр.)',
+                'Паспарту — 6 ценови вида (виж таблицата по-горе). Рязане %s €/бр. и +%s €/доп. отвор — само при паспарту на клиент; сложно рязане +50%% (мин. %s €/бр.)',
                 format_price_list_rule_amount(get_pricing_setting($conn, 'passepartout_cutting_labor', 1.84)),
                 format_price_list_rule_amount(get_pricing_setting($conn, 'passepartout_multi_opening', 1.22)),
                 format_price_list_rule_amount(get_pricing_setting($conn, 'passepartout_complex_min', 6.10))
@@ -447,9 +447,75 @@ function seed_price_list_catalog(PDO $conn): void
     sync_catalog_min_prices($conn);
 }
 
+function service_area_tier_rank(string $name): int
+{
+    if (preg_match('/до\s*0[,.]5/u', $name)) {
+        return 1;
+    }
+    if (preg_match('/0[,.]5\s*[–\-]\s*0[,.]8/u', $name)) {
+        return 2;
+    }
+    if (preg_match('/(над\s*0[,.]8|0[,.]8\s*[–\-]\s*1[,.]2)/u', $name)) {
+        return 3;
+    }
+
+    return 99;
+}
+
+function sort_services_for_display(array $services): array
+{
+    usort($services, static function (array $a, array $b): int {
+        $catA = $a['category'] ?? '';
+        $catB = $b['category'] ?? '';
+        if ($catA !== $catB) {
+            return strcmp($catA, $catB);
+        }
+
+        if (in_array($catA, ['assembly', 'glass_labor'], true)) {
+            $rankA = service_area_tier_rank($a['name'] ?? '');
+            $rankB = service_area_tier_rank($b['name'] ?? '');
+            if ($rankA !== $rankB) {
+                return $rankA <=> $rankB;
+            }
+        }
+
+        return strcmp($a['name'] ?? '', $b['name'] ?? '');
+    });
+
+    return $services;
+}
+
 function get_all_services(PDO $conn): array
 {
-    return $conn->query('SELECT * FROM services ORDER BY category, name')->fetchAll();
+    $rows = $conn->query('SELECT * FROM services ORDER BY category, name')->fetchAll();
+
+    return sort_services_for_display($rows);
+}
+
+function migrate_service_display_names(PDO $conn): void
+{
+    $oldName = 'Опъване платно (приковаване)';
+    $newName = 'Опъване платно (задно опъване)';
+
+    $lookup = $conn->prepare('SELECT id FROM services WHERE name = ? LIMIT 1');
+
+    $lookup->execute([$newName]);
+    $newRow = $lookup->fetch();
+
+    $lookup->execute([$oldName]);
+    $oldRow = $lookup->fetch();
+
+    if (!$oldRow) {
+        return;
+    }
+
+    if ($newRow) {
+        $conn->prepare('DELETE FROM services WHERE id = ?')->execute([(int)$oldRow['id']]);
+
+        return;
+    }
+
+    $conn->prepare('UPDATE services SET name = ? WHERE id = ?')->execute([$newName, (int)$oldRow['id']]);
 }
 
 function parse_extra_service_ids($raw): array
@@ -480,7 +546,7 @@ function seed_services_from_price_list(PDO $conn): void
         ['Поставяне в готова рамка (0.8–1.2 кв.м.)', 9.18, 0, 'piece', 'assembly'],
         ['Демонтаж от рамка на клиент', 1.85, 0, 'piece', 'assembly'],
         ['Опъване платно (странично)', 9.16, 3.05, 'sqm', 'stretching'],
-        ['Опъване платно (приковаване)', 15.26, 6.10, 'sqm', 'stretching'],
+        ['Опъване платно (задно опъване)', 15.26, 6.10, 'sqm', 'stretching'],
         ['Каширане сив картон', 18.32, 4.88, 'sqm', 'mounting'],
         ['Каширане пенокартон', 25.64, 4.07, 'sqm', 'mounting'],
         ['Изправяне на преса', 7.33, 0, 'piece', 'general'],

@@ -5,6 +5,9 @@
             <a href="<?= url_for('archives') ?>" class="btn btn-outline-secondary">
                 <i class="fas fa-archive"></i> Архив
             </a>
+            <button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#addPaintingReservationModal">
+                <i class="fas fa-bookmark"></i> Резервация
+            </button>
             <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addOrderModal">
                 <i class="fas fa-plus"></i> Нова поръчка
             </button>
@@ -62,7 +65,11 @@
         window.PASSEPARTOUT_MAP = <?= json_encode(array_column($passepartouts, 'id', 'name'), JSON_UNESCAPED_UNICODE) ?>;
         window.SERVICES_MAP = <?= json_encode(array_column($services ?? [], 'name', 'id'), JSON_UNESCAPED_UNICODE) ?>;
     </script>
-    <?php $servicesById = array_column($services ?? [], 'name', 'id'); ?>
+    <?php
+    $servicesById = array_column($services ?? [], 'name', 'id');
+    $workloadChart = $workloadChart ?? ['days' => [], 'max' => 1];
+    include __DIR__ . '/partials/orders_workload_chart.php';
+    ?>
 
     <div class="orders-container">
         <div class="table-container">
@@ -101,6 +108,7 @@
                         <tr class="order-row<?= $hasExtras ? ' order-row--extras' : '' ?>"
                             data-order-id="<?= (int)$order['id'] ?>"
                             data-order-date="<?= e($order['date'] ?? '') ?>"
+                            data-order-accepted-date="<?= e(order_accepted_date_iso($order)) ?>"
                             data-order="<?= $orderData ?>"
                             <?= $extrasTitle !== '' ? 'title="' . e($extrasTitle) . '"' : '' ?>>
                             <td><?= (int)$order['order_number'] ?><?= $order['sub_order_number'] > 0 ? '.' . (int)$order['sub_order_number'] : '' ?></td>
@@ -173,3 +181,4 @@
 </div>
 
 <?php include __DIR__ . '/partials/order_modals.php'; ?>
+<?php include __DIR__ . '/partials/painting_reservation_modal.php'; ?>

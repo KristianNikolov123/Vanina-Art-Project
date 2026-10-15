@@ -141,6 +141,17 @@ if ($uri === '/login_logs') {
 if ($uri === '/interface') {
     require_login();
     $conn = get_db_connection();
+    if ($method === 'POST') {
+        $action = $_POST['_action'] ?? '';
+        if ($action === 'add_painting_reservation') {
+            process_add_painting_reservation_submission($conn, $_POST);
+            redirect('/interface');
+        }
+        if ($action === 'delete_painting_reservation') {
+            process_delete_painting_reservation_submission($conn, (int)($_POST['reservation_id'] ?? 0));
+            redirect('/interface');
+        }
+    }
     $orders = fetch_active_orders($conn);
     $profiles = $conn->query('SELECT id, name, price FROM profiles ORDER BY name')->fetchAll();
     $glasses = $conn->query('SELECT id, name, price FROM glasses ORDER BY name')->fetchAll();
@@ -151,7 +162,10 @@ if ($uri === '/interface') {
     render('interface.php', [
         'title' => 'Поръчки',
         'current_page' => 'interface',
+        'body_class' => 'page-orders',
+        'layout_container_class' => 'container-fluid px-2 px-lg-3',
         'orders' => $orders,
+        'workloadChart' => build_order_workload_chart($conn, $orders, 14),
         'profiles' => $profiles,
         'glasses' => $glasses,
         'passepartouts' => $passepartouts,
@@ -374,6 +388,22 @@ if ($uri === '/add_order' && $method === 'POST') {
     redirect('/interface');
 }
 
+if ($uri === '/add_painting_reservation') {
+    require_login();
+    if ($method === 'POST') {
+        process_add_painting_reservation_submission(get_db_connection(), $_POST);
+    }
+    redirect('/interface');
+}
+
+if (preg_match('#^/delete_painting_reservation/(\d+)$#', $uri, $m)) {
+    require_login();
+    if ($method === 'POST') {
+        process_delete_painting_reservation_submission(get_db_connection(), (int)$m[1]);
+    }
+    redirect('/interface');
+}
+
 if (preg_match('#^/edit_order/(\d+)$#', $uri, $m) && $method === 'POST') {
     require_login();
     $orderId = (int)$m[1];
@@ -547,7 +577,8 @@ if (preg_match('#^/edit_profile/(\d+)$#', $uri, $m) && $method === 'POST') {
     $conn = get_db_connection();
     try {
         $widthCm = isset($_POST['width_cm']) && $_POST['width_cm'] !== '' ? $_POST['width_cm'] : null;
-        $profileType = $_POST['profile_type'] ?? 'wood';
+        $requestedType = $_POST['profile_type'] ?? 'wood';
+        $profileType = in_array($requestedType, profile_allowed_types(), true) ? $requestedType : 'wood';
         $stmt = $conn->prepare('UPDATE profiles SET name = ?, price = ?, stock = ?, width_cm = ?, profile_type = ? WHERE id = ?');
         $stmt->execute([$_POST['name'], $_POST['price'], $_POST['stock'], $widthCm, $profileType, (int)$m[1]]);
         flash('Профилът е редактиран успешно!', 'success');

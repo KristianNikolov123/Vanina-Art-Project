@@ -21,6 +21,8 @@ function url_for(string $route, array $params = []): string
         'add_hanging' => '/add_hanging',
         'submit_feedback' => '/submit_feedback',
         'add_order' => '/add_order',
+        'add_painting_reservation' => '/add_painting_reservation',
+        'delete_painting_reservation' => '/delete_painting_reservation',
         'add_profile' => '/add_profile',
         'add_glass' => '/add_glass',
         'add_passepartout' => '/add_passepartout',
@@ -271,6 +273,7 @@ function order_has_extras(array $order): bool
         || $frameShape !== ''
         || $openings > 1
         || $transportKm > 0
+        || !empty($order['profile_ready_frame'])
         || count($serviceIds) > 0;
 }
 
@@ -317,6 +320,13 @@ function format_order_extras_labels(array $order, array $servicesById = []): arr
         $labels[] = 'Транспорт ' . rtrim(rtrim(number_format($transportKm, 2, '.', ''), '0'), '.') . ' км';
     }
 
+    if (!empty($order['profile_ready_frame'])) {
+        $price = (float)($order['profile_ready_frame_price'] ?? 0);
+        $labels[] = $price > 0
+            ? 'Готова рамка (' . rtrim(rtrim(number_format($price, 2, '.', ''), '0'), '.') . ' €/бр.)'
+            : 'Готова рамка';
+    }
+
     foreach (parse_extra_service_ids($order['extra_services'] ?? '[]') as $serviceId) {
         if (isset($servicesById[$serviceId])) {
             $labels[] = $servicesById[$serviceId];
@@ -331,6 +341,265 @@ function order_is_completed(array $order): bool
     return !empty($order['paid']) && !empty($order['collected']);
 }
 
+function profile_allowed_types(): array
+{
+    return ['wood', 'plastic', 'metal', 'client_material'];
+}
+
+function profile_type_labels(): array
+{
+    return [
+        'wood' => 'Дърво',
+        'plastic' => 'Пластмаса',
+        'metal' => 'Метал',
+        'client_material' => 'Материал на клиент',
+    ];
+}
+
+/** @return 'wood'|'plastic_metal'|null */
+function order_workload_workshop_bucket(array $order, array $profileTypeByName): ?string
+{
+    $profileName = trim($order['profile'] ?? '');
+    if ($profileName === '') {
+        if (!empty($order['profile_ready_frame'])) {
+            return 'plastic_metal';
+        }
+
+        return null;
+    }
+
+    $profileType = $profileTypeByName[$profileName] ?? 'wood';
+
+    return in_array($profileType, ['metal', 'plastic', 'client_material'], true)
+        ? 'plastic_metal'
+        : 'wood';
+}
+
+function order_workload_metal_multiplier(): int
+{
+    return 2;
+}
+
+function order_workload_load_units(array $order, array $profileTypeByName, string $bucket): int
+{
+    $pieces = max(1, (int)($order['frame_count'] ?? 1));
+    if ($bucket !== 'plastic_metal') {
+        return $pieces;
+    }
+
+    $profileName = trim($order['profile'] ?? '');
+    if ($profileName === '') {
+        return $pieces;
+    }
+
+    $profileType = $profileTypeByName[$profileName] ?? 'wood';
+    if ($profileType === 'metal') {
+        return $pieces * order_workload_metal_multiplier();
+    }
+
+    return $pieces;
+}
+
+function build_profile_type_by_name(PDO $conn): array
+{
+    $map = [];
+    foreach ($conn->query('SELECT name, profile_type FROM profiles')->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $map[$row['name']] = $row['profile_type'] ?? 'wood';
+    }
+
+    return $map;
+}
+
+function painting_reservation_workshop_groups(): array
+{
+    return [
+        'unknown' => 'Още не е ясно',
+        'plastic_metal' => 'Пластмаса + метал',
+        'wood' => 'Дърво',
+    ];
+}
+
+function painting_reservation_allowed_workshop(?string $group): string
+{
+    $groups = painting_reservation_workshop_groups();
+
+    return isset($groups[$group ?? '']) ? ($group ?? 'unknown') : 'unknown';
+}
+
+function fetch_painting_reservations_in_range(PDO $conn, string $fromIso, string $toIso): array
+{
+    $stmt = $conn->prepare('
+        SELECT * FROM painting_reservations
+        WHERE pickup_date >= ? AND pickup_date <= ?
+        ORDER BY pickup_date ASC, id ASC
+    ');
+    $stmt->execute([$fromIso, $toIso]);
+
+    return $stmt->fetchAll();
+}
+
+function create_painting_reservation_from_post(PDO $conn, array $post): void
+{
+    $name = trim($post['customer_name'] ?? '');
+    if ($name === '') {
+        throw new InvalidArgumentException('Въведете име на клиент.');
+    }
+
+    $pickup = parse_user_date_to_iso($post['pickup_date'] ?? $post['date'] ?? '');
+    if ($pickup === null) {
+        throw new InvalidArgumentException('Въведете валидна дата на получаване (дд/мм/гггг).');
+    }
+
+    $count = max(1, (int)($post['painting_count'] ?? 1));
+    $workshop = painting_reservation_allowed_workshop($post['workshop_group'] ?? 'unknown');
+    $notes = trim($post['notes'] ?? '');
+
+    $stmt = $conn->prepare('
+        INSERT INTO painting_reservations (pickup_date, customer_name, painting_count, workshop_group, notes)
+        VALUES (?, ?, ?, ?, ?)
+    ');
+    $stmt->execute([
+        $pickup,
+        $name,
+        $count,
+        $workshop,
+        $notes !== '' ? $notes : null,
+    ]);
+}
+
+function delete_painting_reservation(PDO $conn, int $id): bool
+{
+    $stmt = $conn->prepare('DELETE FROM painting_reservations WHERE id = ?');
+    $stmt->execute([$id]);
+
+    return $stmt->rowCount() > 0;
+}
+
+function process_add_painting_reservation_submission(PDO $conn, array $post): void
+{
+    try {
+        create_painting_reservation_from_post($conn, $post);
+        flash('Резервацията е записана.', 'success');
+    } catch (InvalidArgumentException $e) {
+        flash($e->getMessage(), 'warning');
+    } catch (Exception $e) {
+        flash('Грешка при запис: ' . $e->getMessage(), 'danger');
+    }
+}
+
+function process_delete_painting_reservation_submission(PDO $conn, int $id): void
+{
+    if ($id < 1) {
+        flash('Невалидна резервация.', 'warning');
+
+        return;
+    }
+
+    if (delete_painting_reservation($conn, $id)) {
+        flash('Резервацията е премахната.', 'success');
+    } else {
+        flash('Резервацията не е намерена.', 'warning');
+    }
+}
+
+function build_order_workload_chart(PDO $conn, array $orders, int $futureDays = 14): array
+{
+    $profileTypeByName = build_profile_type_by_name($conn);
+    $woodPieces = [];
+    $plasticMetalPieces = [];
+
+    foreach ($orders as $order) {
+        $pickupDate = trim($order['date'] ?? '');
+        if ($pickupDate === '') {
+            continue;
+        }
+
+        $bucket = order_workload_workshop_bucket($order, $profileTypeByName);
+        if ($bucket === null) {
+            continue;
+        }
+
+        $load = order_workload_load_units($order, $profileTypeByName, $bucket);
+        if ($bucket === 'wood') {
+            $woodPieces[$pickupDate] = ($woodPieces[$pickupDate] ?? 0) + $load;
+        } else {
+            $plasticMetalPieces[$pickupDate] = ($plasticMetalPieces[$pickupDate] ?? 0) + $load;
+        }
+    }
+
+    $weekdayLabels = ['Нд', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
+    $start = new DateTime('today');
+    $days = [];
+    for ($i = 0; $i <= $futureDays; $i++) {
+        $dt = clone $start;
+        if ($i > 0) {
+            $dt->modify("+{$i} days");
+        }
+        $iso = $dt->format('Y-m-d');
+        $days[] = [
+            'date' => $iso,
+            'label' => $dt->format('d/m'),
+            'weekday' => $weekdayLabels[(int)$dt->format('w')],
+            'is_today' => $i === 0,
+            'plastic_metal' => (int)($plasticMetalPieces[$iso] ?? 0),
+            'wood' => (int)($woodPieces[$iso] ?? 0),
+            'reserved_unknown' => 0,
+            'reservations' => [],
+        ];
+    }
+
+    if ($days !== []) {
+        $fromIso = $days[0]['date'];
+        $toIso = $days[count($days) - 1]['date'];
+        $reservations = fetch_painting_reservations_in_range($conn, $fromIso, $toIso);
+        $dayIndexByDate = [];
+        foreach ($days as $idx => $day) {
+            $dayIndexByDate[$day['date']] = $idx;
+        }
+
+        $workshopLabels = painting_reservation_workshop_groups();
+        foreach ($reservations as $reservation) {
+            $pickupDate = trim($reservation['pickup_date'] ?? '');
+            if (!isset($dayIndexByDate[$pickupDate])) {
+                continue;
+            }
+
+            $idx = $dayIndexByDate[$pickupDate];
+            $count = max(1, (int)($reservation['painting_count'] ?? 1));
+            $workshop = painting_reservation_allowed_workshop($reservation['workshop_group'] ?? 'unknown');
+
+            if ($workshop === 'wood') {
+                $days[$idx]['wood'] += $count;
+            } elseif ($workshop === 'plastic_metal') {
+                $days[$idx]['plastic_metal'] += $count;
+            } else {
+                $days[$idx]['reserved_unknown'] += $count;
+            }
+
+            $days[$idx]['reservations'][] = [
+                'id' => (int)$reservation['id'],
+                'customer_name' => $reservation['customer_name'] ?? '',
+                'painting_count' => $count,
+                'workshop_group' => $workshop,
+                'workshop_label' => $workshopLabels[$workshop] ?? $workshop,
+                'notes' => trim($reservation['notes'] ?? ''),
+            ];
+        }
+    }
+
+    $maxCount = 0;
+    foreach ($days as $day) {
+        $maxCount = max($maxCount, $day['plastic_metal'], $day['wood'], $day['reserved_unknown']);
+    }
+
+    return [
+        'days' => $days,
+        'max' => max(1, $maxCount),
+        'total_plastic_metal' => array_sum(array_column($days, 'plastic_metal')),
+        'total_wood' => array_sum(array_column($days, 'wood')),
+    ];
+}
+
 function order_view_data(array $order): array
 {
     return [
@@ -342,6 +611,8 @@ function order_view_data(array $order): array
         'width' => $order['width'],
         'height' => $order['height'],
         'profile' => $order['profile'] ?? '',
+        'profile_ready_frame' => (bool)($order['profile_ready_frame'] ?? false),
+        'profile_ready_frame_price' => $order['profile_ready_frame_price'] ?? null,
         'additional_profiles' => $order['additional_profiles'] ?? '',
         'frame_count' => $order['frame_count'] ?? 1,
         'glass' => $order['glass'] ?? '',
@@ -570,7 +841,7 @@ function is_duplicate_key_exception(Throwable $e): bool
 
 function create_profiles_bulk(PDO $conn, array $rows): array
 {
-    $allowedTypes = ['wood', 'metal', 'client_material'];
+    $allowedTypes = profile_allowed_types();
     $stmt = $conn->prepare('INSERT INTO profiles (name, price, stock, width_cm, profile_type) VALUES (?, ?, ?, ?, ?)');
     $added = [];
     $skipped = [];
@@ -815,7 +1086,8 @@ function bulk_update_profiles(PDO $conn, array $ids, array $post): int
         }
 
         if (!empty($post['apply_profile_type']) && ($post['profile_type'] ?? '') !== '') {
-            $profileType = $post['profile_type'];
+            $requestedType = $post['profile_type'];
+            $profileType = in_array($requestedType, profile_allowed_types(), true) ? $requestedType : $profileType;
         }
 
         $update = $conn->prepare('UPDATE profiles SET price = ?, stock = ?, width_cm = ?, profile_type = ? WHERE id = ?');
@@ -920,6 +1192,10 @@ function build_order_from_post(?string $customerName = null, ?string $customerPh
         'frame_shape' => in_array($_POST['frame_shape'] ?? '', ['ellipse_12', 'circle_24'], true) ? $_POST['frame_shape'] : '',
         'frame_high_complexity' => isset($_POST['frame_high_complexity']) ? 1 : 0,
         'client_passepartout_cutting' => isset($_POST['client_passepartout_cutting']) ? 1 : 0,
+        'profile_ready_frame' => isset($_POST['profile_ready_frame']) ? 1 : 0,
+        'profile_ready_frame_price' => ($_POST['profile_ready_frame_price'] ?? '') !== ''
+            ? max(0, (float)$_POST['profile_ready_frame_price'])
+            : null,
         'manual_discount' => ($_POST['discount'] ?? '') !== '' ? max(0, min(100, (float)$_POST['discount'])) : 0,
         'passepartout_use' => normalize_passepartout_use($_POST['passepartout_use'] ?? ''),
         'additional_profiles' => get_additional_profiles(),
@@ -981,6 +1257,8 @@ function order_bind_values(array $order): array
         $order['frame_shape'],
         $order['frame_high_complexity'],
         $order['client_passepartout_cutting'],
+        $order['profile_ready_frame'] ?? 0,
+        $order['profile_ready_frame_price'] ?? null,
     ];
 }
 
@@ -995,9 +1273,10 @@ function insert_order_row(PDO $conn, array $order, int $orderNumber, int $subOrd
             back, hanging, weight_kg, customer_name, customer_phone, price, paid, collected,
             additional_profiles, frame_count, advance_payment, discount, description,
             passepartout_openings, urgent, student_discount, complex_passepartout, extra_services, transport_km,
-            frame_box, frame_nonstandard, frame_shape, frame_high_complexity, client_passepartout_cutting
+            frame_box, frame_nonstandard, frame_shape, frame_high_complexity, client_passepartout_cutting,
+            profile_ready_frame, profile_ready_frame_price
         ) VALUES (
-            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
         )
     ');
     $stmt->execute(array_merge([$orderNumber, $subOrderNumber], order_bind_values($order)));
@@ -1017,7 +1296,8 @@ function update_order_row(PDO $conn, array $order, int $orderId): void
             passepartout_openings = ?, urgent = ?, student_discount = ?,
             complex_passepartout = ?, extra_services = ?, transport_km = ?,
             frame_box = ?, frame_nonstandard = ?, frame_shape = ?, frame_high_complexity = ?,
-            client_passepartout_cutting = ?
+            client_passepartout_cutting = ?,
+            profile_ready_frame = ?, profile_ready_frame_price = ?
         WHERE id = ?
     ');
     $stmt->execute(array_merge(order_bind_values($order), [$orderId]));
@@ -1038,6 +1318,10 @@ function prepare_order_persistence(PDO $conn, array $post, ?string $customerName
         'width' => $post['width'] ?? null,
         'height' => $post['height'] ?? null,
         'profile' => $post['profile'] ?? '',
+        'profile_ready_frame' => isset($post['profile_ready_frame']) ? 1 : 0,
+        'profile_ready_frame_price' => ($post['profile_ready_frame_price'] ?? '') !== ''
+            ? max(0, (float)$post['profile_ready_frame_price'])
+            : null,
         'glass' => $post['glass'] ?? '',
         'passepartout' => $stockOrder['passepartout'] ?? ($post['passepartout'] ?? ''),
         'passepartout_bill_width' => $stockOrder['passepartout_bill_width'] ?? null,

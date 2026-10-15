@@ -69,6 +69,8 @@ function clearAddOrderForm() {
     expandOrderExtrasIfNeeded(form, null);
     syncHangingWeightField(form);
     syncPassepartoutUseFields(form);
+    syncProfileReadyFrameFields(form);
+    syncAreaTierSuggestions(form);
     form.dataset.autoPrice = '1';
     setOrderFormAcceptedDateToday(form);
 }
@@ -155,6 +157,109 @@ function syncPassepartoutUseFields(form) {
             primaryLabel.textContent = 'Паспарту';
         }
     }
+}
+
+function syncProfileReadyFrameFields(form) {
+    if (!form) return;
+    const checkbox = form.querySelector('[name="profile_ready_frame"]');
+    const priceWrap = form.querySelector('.profile-ready-frame-price-wrap');
+    const priceInput = form.querySelector('[name="profile_ready_frame_price"]');
+    if (!checkbox || !priceWrap) return;
+
+    const enabled = checkbox.checked;
+    priceWrap.classList.toggle('d-none', !enabled);
+    if (!enabled && priceInput) {
+        priceInput.value = '';
+    }
+}
+
+function framePieceSqmFromForm(form) {
+    const w = parseFloat(form.querySelector('[name="width"]')?.value || '0');
+    const h = parseFloat(form.querySelector('[name="height"]')?.value || '0');
+    if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) {
+        return 0;
+    }
+    return (w * h) / 10000;
+}
+
+function assemblyAreaTierFromSqm(sqm) {
+    if (sqm <= 0) return 0;
+    if (sqm <= 0.5) return 1;
+    if (sqm <= 0.8) return 2;
+    return 3;
+}
+
+function syncAreaTierSuggestions(form) {
+    if (!form) return;
+    const tier = assemblyAreaTierFromSqm(framePieceSqmFromForm(form));
+    form.querySelectorAll('.area-tier-check').forEach((input) => {
+        const item = input.closest('.extra-service-item');
+        if (!item) return;
+        const inputTier = parseInt(input.dataset.areaTier || '0', 10);
+        item.classList.toggle('area-tier-suggested', tier > 0 && inputTier === tier);
+    });
+}
+
+function initAreaTierExclusiveChecks() {
+    document.addEventListener('change', (event) => {
+        const input = event.target;
+        if (!input.classList || !input.classList.contains('area-tier-check') || !input.checked) {
+            return;
+        }
+        const group = input.dataset.tierGroup;
+        if (!group) return;
+        const form = input.closest('.order-form');
+        if (!form) return;
+        form.querySelectorAll(`.area-tier-check[data-tier-group="${group}"]`).forEach((other) => {
+            if (other !== input) {
+                other.checked = false;
+            }
+        });
+        if (form.dataset.autoPrice !== '0') {
+            updateOrderPricing(form);
+        }
+    });
+}
+
+const ORDER_WORKLOAD_OPEN_KEY = 'vaninaOrdersWorkloadOpen';
+
+function syncWorkloadChartActiveDay(isoDate) {
+    document.querySelectorAll('.orders-workload-row').forEach((btn) => {
+        btn.classList.toggle('is-active', Boolean(isoDate) && btn.dataset.workloadDate === isoDate);
+    });
+}
+
+function initOrderWorkloadCollapse() {
+    const collapseEl = document.getElementById('ordersWorkloadCollapse');
+    if (!collapseEl) return;
+
+    const stored = sessionStorage.getItem(ORDER_WORKLOAD_OPEN_KEY);
+    const instance = bootstrap.Collapse.getOrCreateInstance(collapseEl, { toggle: false });
+    if (stored === '0') {
+        instance.hide();
+    } else if (stored === '1') {
+        instance.show();
+    }
+
+    collapseEl.addEventListener('hidden.bs.collapse', () => {
+        sessionStorage.setItem(ORDER_WORKLOAD_OPEN_KEY, '0');
+    });
+    collapseEl.addEventListener('shown.bs.collapse', () => {
+        sessionStorage.setItem(ORDER_WORKLOAD_OPEN_KEY, '1');
+    });
+}
+
+function initOrderWorkloadChart() {
+    document.querySelectorAll('.orders-workload-row').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const iso = btn.dataset.workloadDate || '';
+            if (!iso) return;
+            const current = getOrderDayFilterValue();
+            setOrderDayFilter(current === iso ? '' : iso);
+        });
+    });
+    syncWorkloadChartActiveDay(getOrderDayFilterValue());
+    initOrderWorkloadCollapse();
 }
 
 function parsePrimaryPassepartoutLabel(label) {
@@ -296,6 +401,7 @@ function setOrderDayFilter(isoDate, persist) {
     }
 
     applyOrderRowVisibility();
+    syncWorkloadChartActiveDay(isoDate || '');
 }
 
 function initOrderDayFilter() {
@@ -584,6 +690,15 @@ function editOrder(orderId) {
         passepartoutBgSelect.value = resolvePassepartoutCatalogId(data.passepartout_background);
     }
     syncPassepartoutUseFields(form);
+    const readyFrame = form.querySelector('[name="profile_ready_frame"]');
+    if (readyFrame) {
+        readyFrame.checked = Boolean(data.profile_ready_frame);
+    }
+    const readyFramePrice = form.querySelector('[name="profile_ready_frame_price"]');
+    if (readyFramePrice) {
+        readyFramePrice.value = data.profile_ready_frame_price ?? '';
+    }
+    syncProfileReadyFrameFields(form);
     form.querySelector('[name="back"]').value = data.back ?? '';
     form.querySelector('[name="hanging"]').value = data.hanging ?? '';
     const weightKg = form.querySelector('[name="weight_kg"]');
@@ -695,6 +810,7 @@ function orderHasExtras(data) {
         || (data.frame_shape && data.frame_shape !== '')
         || (data.passepartout_openings && Number(data.passepartout_openings) > 1)
         || (data.transport_km && Number(data.transport_km) > 0)
+        || data.profile_ready_frame
         || (Array.isArray(serviceIds) && serviceIds.length > 0)
     );
 }
@@ -781,6 +897,9 @@ async function updateOrderPricing(form) {
             lines.push(`Профил (${pricing.profile_meters} л.м.): ${parts.join(' + ')}`);
         } else if (profileName && pricing.profile_meters > 0 && pricing.profile_found === false) {
             lines.push(`<span class="text-warning">Профил „${profileName}" не е в Склад → Профили (липсва цена на материал)</span>`);
+        }
+        if (pricing.profile_ready_frame_cost > 0) {
+            lines.push(`Готова рамка → ${pricing.profile_ready_frame_cost.toFixed(2)} €`);
         }
         if (pricing.frame_extras && pricing.frame_extras.length > 0) {
             pricing.frame_extras.forEach((extra) => {
@@ -969,6 +1088,8 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     initOrderDayFilter();
+    initOrderWorkloadChart();
+    initAreaTierExclusiveChecks();
 
     const searchInput = document.getElementById('searchInput');
     if (searchInput) {
@@ -1086,7 +1207,9 @@ document.addEventListener('DOMContentLoaded', function () {
             || el.name === 'frame_nonstandard'
             || el.name === 'frame_high_complexity'
             || el.name === 'frame_shape'
-            || el.name === 'client_passepartout_cutting';
+            || el.name === 'client_passepartout_cutting'
+            || el.name === 'profile_ready_frame'
+            || el.name === 'profile_ready_frame_price';
     }
 
     document.querySelectorAll('.order-form').forEach((form) => {
@@ -1103,6 +1226,12 @@ document.addEventListener('DOMContentLoaded', function () {
             if (event.target && event.target.name === 'passepartout_use') {
                 syncPassepartoutUseFields(form);
             }
+            if (event.target && event.target.name === 'profile_ready_frame') {
+                syncProfileReadyFrameFields(form);
+            }
+            if (event.target && (event.target.name === 'width' || event.target.name === 'height')) {
+                syncAreaTierSuggestions(form);
+            }
             if (shouldRecalculatePrice(event)) {
                 updateOrderPricing(form);
             }
@@ -1115,12 +1244,20 @@ document.addEventListener('DOMContentLoaded', function () {
             if (event.target && event.target.name === 'passepartout_use') {
                 syncPassepartoutUseFields(form);
             }
+            if (event.target && event.target.name === 'profile_ready_frame') {
+                syncProfileReadyFrameFields(form);
+            }
+            if (event.target && (event.target.name === 'width' || event.target.name === 'height')) {
+                syncAreaTierSuggestions(form);
+            }
             if (shouldRecalculatePrice(event)) {
                 updateOrderPricing(form);
             }
         });
 
         syncPassepartoutUseFields(form);
+        syncProfileReadyFrameFields(form);
+        syncAreaTierSuggestions(form);
     });
 
     const addOrderModal = document.getElementById('addOrderModal');

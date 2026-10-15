@@ -21,7 +21,7 @@
         <a href="<?= url_for('passepartouts') ?>" class="card text-decoration-none h-100 warehouse-card">
             <div class="card-body">
                 <h5 class="card-title"><i class="fas fa-image text-primary"></i> Паспарту</h5>
-                <p class="card-text text-muted">Материал по листове; рязане се начислява автоматично.</p>
+                <p class="card-text text-muted">Материал по листове; рязане се начислява само при паспарту на клиент.</p>
             </div>
         </a>
     </div>

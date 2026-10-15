@@ -13,6 +13,14 @@ $groupedServices = [];
 foreach ($services as $service) {
     $groupedServices[$service['category'] ?? 'general'][] = $service;
 }
+foreach ($groupedServices as $category => $categoryServices) {
+    if (in_array($category, ['assembly', 'glass_labor'], true)) {
+        usort($categoryServices, static function (array $a, array $b): int {
+            return service_area_tier_rank($a['name'] ?? '') <=> service_area_tier_rank($b['name'] ?? '');
+        });
+        $groupedServices[$category] = $categoryServices;
+    }
+}
 $extrasId = $extrasId ?? 'extras';
 $collapseId = 'orderExtras_' . $extrasId;
 ?>
@@ -113,10 +121,16 @@ $collapseId = 'orderExtras_' . $extrasId;
                             <?php foreach ($categoryServices as $service): ?>
                             <div class="form-check extra-service-item"
                                  data-service-name="<?= e(mb_strtolower($service['name'], 'UTF-8')) ?>">
-                                <input type="checkbox" class="form-check-input order-price-trigger extra-service-check"
+                                <?php
+                                $tierRank = in_array($category, ['assembly', 'glass_labor'], true)
+                                    ? service_area_tier_rank($service['name'])
+                                    : 0;
+                                ?>
+                                <input type="checkbox" class="form-check-input order-price-trigger extra-service-check<?= $tierRank > 0 ? ' area-tier-check' : '' ?>"
                                        name="extra_services[]" value="<?= (int)$service['id'] ?>"
                                        id="svc_<?= e($extrasId) ?>_<?= (int)$service['id'] ?>"
-                                       data-needs-km="<?= ($service['pricing_unit'] ?? '') === 'km' ? '1' : '0' ?>">
+                                       data-needs-km="<?= ($service['pricing_unit'] ?? '') === 'km' ? '1' : '0' ?>"
+                                       <?= $tierRank > 0 ? 'data-tier-group="' . e($category) . '" data-area-tier="' . (int)$tierRank . '"' : '' ?>>
                                 <label class="form-check-label" for="svc_<?= e($extrasId) ?>_<?= (int)$service['id'] ?>">
                                     <?= e($service['name']) ?>
                                     <span class="text-muted">(<?= number_format((float)$service['price'], 2) ?> €)</span>

@@ -258,6 +258,8 @@ function ensure_catalog_schema(PDO $conn): void
         'passepartout_background' => $isMysql ? 'VARCHAR(255) NULL' : 'TEXT',
         'passepartout_bg_sheet_type_id' => $isMysql ? 'INT UNSIGNED NULL' : 'INTEGER',
         'passepartout_bg_sheet_usage' => $isMysql ? 'DECIMAL(10,4) NULL' : 'REAL',
+        'profile_ready_frame' => $isMysql ? 'TINYINT(1) NOT NULL DEFAULT 0' : 'INTEGER NOT NULL DEFAULT 0',
+        'profile_ready_frame_price' => $isMysql ? 'DECIMAL(10,2) NULL' : 'REAL',
         'deleted_at' => $isMysql ? 'DATETIME NULL' : 'TEXT',
     ];
     foreach ($orderExtraColumns as $column => $type) {
@@ -270,6 +272,40 @@ function ensure_catalog_schema(PDO $conn): void
     ensure_hanging_weight_tiers_schema($conn);
     seed_price_list_catalog($conn);
     ensure_passepartout_tier_pricing_schema($conn);
+    ensure_painting_reservations_schema($conn);
+    migrate_service_display_names($conn);
+}
+
+function ensure_painting_reservations_schema(PDO $conn): void
+{
+    $isMysql = $conn->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql';
+
+    if ($isMysql) {
+        $conn->exec('
+            CREATE TABLE IF NOT EXISTS painting_reservations (
+                id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                pickup_date DATE NOT NULL,
+                customer_name VARCHAR(255) NOT NULL,
+                painting_count INT UNSIGNED NOT NULL DEFAULT 1,
+                workshop_group VARCHAR(20) NOT NULL DEFAULT "unknown",
+                notes TEXT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                KEY idx_res_pickup (pickup_date)
+            ) ENGINE=InnoDB
+        ');
+    } else {
+        $conn->exec('
+            CREATE TABLE IF NOT EXISTS painting_reservations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                pickup_date TEXT NOT NULL,
+                customer_name TEXT NOT NULL,
+                painting_count INTEGER NOT NULL DEFAULT 1,
+                workshop_group TEXT NOT NULL DEFAULT "unknown",
+                notes TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        ');
+    }
 }
 
 function ensure_hanging_weight_tiers_schema(PDO $conn): void

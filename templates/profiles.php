@@ -85,7 +85,7 @@ $profileSeriesLetters = collect_profile_series_letters($profiles);
                     </td>
                     <td class="name"><?= e($profile['name']) ?></td>
                     <td class="width-cm"><?= e($profile['width_cm'] ?? '—') ?></td>
-                    <td class="profile-type"><?= e(['wood' => 'Дърво', 'metal' => 'Метал', 'client_material' => 'Клиент'][$profile['profile_type'] ?? 'wood'] ?? 'Дърво') ?></td>
+                    <td class="profile-type"><?= e(profile_type_labels()[$profile['profile_type'] ?? 'wood'] ?? 'Дърво') ?></td>
                     <td class="price"><?= e($profile['price']) ?></td>
                     <td>
                         <span class="badge <?= $profile['stock'] > 0 ? 'bg-success' : 'bg-danger' ?>">
@@ -155,8 +155,9 @@ $profileSeriesLetters = collect_profile_series_letters($profiles);
                             <label class="form-check-label" for="bulk_apply_type">Тип</label>
                         </div>
                         <select class="form-select bulk-field__value" name="profile_type" disabled>
-                            <option value="wood">Дърво/пластмаса</option>
-                            <option value="metal">Метален</option>
+                            <option value="wood">Дърво</option>
+                            <option value="plastic">Пластмаса</option>
+                            <option value="metal">Метал</option>
                             <option value="client_material">Материал на клиент</option>
                         </select>
                     </div>
@@ -195,8 +196,9 @@ $profileSeriesLetters = collect_profile_series_letters($profiles);
                                 <div class="col-md-6">
                                     <label class="form-label">Тип профил</label>
                                     <select class="form-select" name="profile_rows[0][profile_type]" data-field="profile_type">
-                                        <option value="wood">Дърво/пластмаса</option>
-                                        <option value="metal">Метален</option>
+                                        <option value="wood">Дърво</option>
+                                        <option value="plastic">Пластмаса</option>
+                                        <option value="metal">Метал</option>
                                         <option value="client_material">Материал на клиент</option>
                                     </select>
                                 </div>
@@ -245,8 +247,9 @@ $profileSeriesLetters = collect_profile_series_letters($profiles);
                     <div class="mb-3">
                         <label class="form-label">Тип профил</label>
                         <select class="form-select" name="profile_type">
-                            <option value="wood">Дърво/пластмаса</option>
-                            <option value="metal">Метален</option>
+                            <option value="wood">Дърво</option>
+                            <option value="plastic">Пластмаса</option>
+                            <option value="metal">Метал</option>
                             <option value="client_material">Материал на клиент</option>
                         </select>
                     </div>

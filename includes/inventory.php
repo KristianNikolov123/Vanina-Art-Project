@@ -9,7 +9,7 @@ function apply_stock_for_order(PDO $conn, array $order, int $direction): void
 
     if ($width > 0 && $height > 0) {
         $profileNames = get_order_profile_names($order);
-        if (!empty($profileNames)) {
+        if (!empty($profileNames) && empty($order['profile_ready_frame'])) {
             $stacked = calculate_stacked_profile_material($conn, $width, $height, $frameCount, $profileNames);
             foreach ($stacked['lines'] as $line) {
                 if (empty($line['found']) || ($line['meters'] ?? 0) <= 0) {

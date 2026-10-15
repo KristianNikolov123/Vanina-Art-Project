@@ -28,7 +28,7 @@
         }
     </style>
 </head>
-<body>
+<body class="<?= e($body_class ?? '') ?>">
     <nav class="navbar navbar-expand-lg navbar-dark">
         <div class="container">
             <a class="navbar-brand d-flex align-items-center" href="<?= url_for('home') ?>">
@@ -106,7 +106,7 @@
         </div>
     </nav>
 
-    <div class="container mt-4">
+    <div class="<?= e($layout_container_class ?? 'container') ?> mt-4">
         <?php foreach ($flashed_messages as $flash): ?>
             <div class="alert alert-<?= e($flash['category']) ?> alert-dismissible fade show" role="alert">
                 <?= e($flash['message']) ?>

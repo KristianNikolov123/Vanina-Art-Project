@@ -16,6 +16,18 @@ $additionalProfilesId = $additionalProfilesId ?? 'additionalProfiles';
             </button>
         </div>
         <div id="<?= e($additionalProfilesId) ?>"></div>
+        <div class="profile-ready-frame-fields mt-2">
+            <div class="form-check">
+                <input type="checkbox" class="form-check-input order-price-trigger" name="profile_ready_frame" id="<?= e($additionalProfilesId) ?>_ready_frame">
+                <label class="form-check-label" for="<?= e($additionalProfilesId) ?>_ready_frame">Готова рамка (своя цена)</label>
+            </div>
+            <div class="input-group input-group-sm mt-1 profile-ready-frame-price-wrap d-none">
+                <input type="text" inputmode="decimal" autocomplete="off"
+                    class="form-control order-price-trigger" name="profile_ready_frame_price"
+                    placeholder="€ / бр. рамка" step="0.01">
+                <span class="input-group-text">€/бр.</span>
+            </div>
+        </div>
     </div>
     <div class="col-md-3 mb-3">
         <label class="form-label">Брой рамки</label>
