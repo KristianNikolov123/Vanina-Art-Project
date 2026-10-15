@@ -253,6 +253,11 @@ function ensure_catalog_schema(PDO $conn): void
         'client_passepartout_cutting' => $isMysql ? 'TINYINT(1) NOT NULL DEFAULT 0' : 'INTEGER NOT NULL DEFAULT 0',
         'weight_kg' => $isMysql ? 'DECIMAL(10,2) NULL' : 'REAL',
         'customer_phone' => $isMysql ? 'VARCHAR(50) NULL' : 'TEXT',
+        'accepted_date' => $isMysql ? 'DATE NULL' : 'TEXT',
+        'passepartout_use' => $isMysql ? "VARCHAR(20) NOT NULL DEFAULT ''" : "TEXT NOT NULL DEFAULT ''",
+        'passepartout_background' => $isMysql ? 'VARCHAR(255) NULL' : 'TEXT',
+        'passepartout_bg_sheet_type_id' => $isMysql ? 'INT UNSIGNED NULL' : 'INTEGER',
+        'passepartout_bg_sheet_usage' => $isMysql ? 'DECIMAL(10,4) NULL' : 'REAL',
         'deleted_at' => $isMysql ? 'DATETIME NULL' : 'TEXT',
     ];
     foreach ($orderExtraColumns as $column => $type) {

@@ -342,8 +342,18 @@ function resolve_passepartout(PDO $conn, ?int $passepartoutId, ?string $passepar
 
     $stmt = $conn->prepare('SELECT * FROM passepartouts WHERE name = ?');
     $stmt->execute([$name]);
+    $row = $stmt->fetch();
+    if ($row) {
+        return $row;
+    }
 
-    return $stmt->fetch() ?: null;
+    if (preg_match('/^(.+?)\s+\([^)]+\)$/u', $name, $matches)) {
+        $stmt->execute([trim($matches[1])]);
+
+        return $stmt->fetch() ?: null;
+    }
+
+    return null;
 }
 
 function get_catalog_price_by_name(PDO $conn, string $table, string $name): ?float
@@ -489,7 +499,8 @@ function apply_order_price_modifiers(PDO $conn, array $order, float $subtotal, f
         );
     }
 
-    $manualDiscount = max(0, (float)($order['manual_discount'] ?? 0));
+    $manualPercent = max(0, min(100, (float)($order['manual_discount'] ?? 0)));
+    $manualDiscount = round($afterComplex * $manualPercent / 100, 2);
     $afterDiscounts = max(0, $afterComplex - $volumeDiscount - $studentDiscount - $manualDiscount);
 
     $urgentSurcharge = 0.0;
@@ -936,14 +947,13 @@ function calculate_passepartout_labor_cost(
     return round($labor, 2);
 }
 
-function calculate_passepartout_billing(PDO $conn, array $order): ?array
+function calculate_passepartout_layer_billing(PDO $conn, array $order, int $passepartoutId): ?array
 {
-    $passepartout = resolve_passepartout(
-        $conn,
-        isset($order['passepartout_id']) ? (int)$order['passepartout_id'] : null,
-        $order['passepartout'] ?? null
-    );
+    if ($passepartoutId <= 0) {
+        return null;
+    }
 
+    $passepartout = resolve_passepartout($conn, $passepartoutId, null);
     if (!$passepartout) {
         return null;
     }
@@ -1021,7 +1031,7 @@ function calculate_passepartout_billing(PDO $conn, array $order): ?array
         'bill_height' => $billHeight,
         'sheet_name' => $billingDims['sheet_name'],
         'sheet_type_id' => $billingDims['sheet_type_id'],
-        'sheet_usage' => $sheetUsage,
+        'sheet_usage' => round($sheetUsage, 4),
         'square_meters' => round($sqm, 4),
         'unit_price' => $materialPricing['unit_price'],
         'pricing_mode' => $materialPricing['mode'],
@@ -1034,6 +1044,82 @@ function calculate_passepartout_billing(PDO $conn, array $order): ?array
         'requested_width' => $width,
         'requested_height' => $height,
     ];
+}
+
+function calculate_passepartout_billing(PDO $conn, array $order): ?array
+{
+    $use = normalize_passepartout_use($order['passepartout_use'] ?? '');
+    if ($use === '') {
+        $use = 'passepartout';
+    }
+
+    $primaryId = (int)($order['passepartout_id'] ?? 0);
+    if ($primaryId <= 0) {
+        $resolved = resolve_passepartout($conn, null, $order['passepartout'] ?? null);
+        $primaryId = $resolved ? (int)$resolved['id'] : 0;
+    }
+
+    if ($use === 'both') {
+        $backgroundId = (int)($order['passepartout_background_id'] ?? 0);
+        if ($backgroundId <= 0 && !empty($order['passepartout_background'])) {
+            $resolvedBg = resolve_passepartout($conn, null, $order['passepartout_background']);
+            $backgroundId = $resolvedBg ? (int)$resolvedBg['id'] : 0;
+        }
+
+        $primaryLayer = $primaryId > 0 ? calculate_passepartout_layer_billing($conn, $order, $primaryId) : null;
+        $backgroundLayer = $backgroundId > 0 ? calculate_passepartout_layer_billing($conn, $order, $backgroundId) : null;
+
+        if (!$primaryLayer && !$backgroundLayer) {
+            return null;
+        }
+
+        $totalCost = round((float)($primaryLayer['cost'] ?? 0) + (float)($backgroundLayer['cost'] ?? 0), 2);
+        $base = $primaryLayer ?? $backgroundLayer;
+
+        return [
+            'passepartout_id' => (int)($primaryLayer['passepartout_id'] ?? 0),
+            'passepartout_name' => $primaryLayer['passepartout_name'] ?? '',
+            'background_layer' => $backgroundLayer,
+            'passepartout_use' => 'both',
+            'material_layers' => ($primaryLayer ? 1 : 0) + ($backgroundLayer ? 1 : 0),
+            'bill_width' => $base['bill_width'],
+            'bill_height' => $base['bill_height'],
+            'sheet_name' => $base['sheet_name'],
+            'sheet_type_id' => $primaryLayer['sheet_type_id'] ?? null,
+            'sheet_usage' => $primaryLayer['sheet_usage'] ?? 0,
+            'square_meters' => $base['square_meters'],
+            'unit_price' => $base['unit_price'],
+            'pricing_mode' => $base['pricing_mode'],
+            'tier_index' => $base['tier_index'],
+            'tier_label' => $base['tier_label'],
+            'cost' => $totalCost,
+            'use_label' => 'паспарту + фон',
+            'sheets_charged' => $base['sheets_charged'],
+            'multi_sheet_billing' => !empty($base['multi_sheet_billing']),
+            'oversize' => !empty($base['oversize']),
+            'requested_width' => $base['requested_width'],
+            'requested_height' => $base['requested_height'],
+        ];
+    }
+
+    if ($primaryId <= 0) {
+        return null;
+    }
+
+    $layer = calculate_passepartout_layer_billing($conn, $order, $primaryId);
+    if (!$layer) {
+        return null;
+    }
+
+    return array_merge($layer, [
+        'passepartout_use' => $use,
+        'material_layers' => 1,
+        'background_layer' => null,
+        'use_label' => match ($use) {
+            'background' => 'фон',
+            default => 'паспарту',
+        },
+    ]);
 }
 
 function calculate_passepartout_sheet_usage(
@@ -1259,6 +1345,8 @@ function calculate_order_pricing(PDO $conn, array $order): array
         'complex_passepartout_surcharge' => $modifiers['complex_passepartout_surcharge'],
         'volume_discount' => $modifiers['volume_discount'],
         'student_discount_amount' => $modifiers['student_discount_amount'],
+        'manual_discount_amount' => $modifiers['manual_discount'],
+        'manual_discount_percent' => max(0, min(100, (float)($order['manual_discount'] ?? 0))),
         'urgent_surcharge' => $modifiers['urgent_surcharge'],
         'profile_found' => $profileName !== '' ? (bool)$mainProfile : null,
         'frame_shape' => $frameShapeLabel,
@@ -1278,9 +1366,25 @@ function enrich_order_pricing_fields(PDO $conn, array $order): array
     $order['passepartout_bill_height'] = $passepartout['bill_height'] ?? null;
     $order['passepartout_sheet_type_id'] = $passepartout['sheet_type_id'] ?? null;
     $order['passepartout_sheet_usage'] = $passepartout['sheet_usage'] ?? null;
-    if (!empty($passepartout['passepartout_name'])) {
-        $order['passepartout'] = $passepartout['passepartout_name'];
+    $use = normalize_passepartout_use($order['passepartout_use'] ?? ($passepartout['passepartout_use'] ?? 'passepartout'));
+    $order['passepartout_use'] = $use;
+
+    $bgLayer = $passepartout['background_layer'] ?? null;
+    $order['passepartout_bg_sheet_type_id'] = $bgLayer['sheet_type_id'] ?? null;
+    $order['passepartout_bg_sheet_usage'] = $bgLayer['sheet_usage'] ?? null;
+
+    if ($use === 'both') {
+        $ppName = trim($passepartout['passepartout_name'] ?? '');
+        $bgName = trim($bgLayer['passepartout_name'] ?? '');
+        $order['passepartout'] = format_passepartout_both_order_label($ppName, $bgName);
+        $order['passepartout_background'] = $bgName;
+    } elseif (!empty($passepartout['passepartout_name'])) {
+        $order['passepartout'] = format_passepartout_order_label($passepartout['passepartout_name'], $use);
+        $order['passepartout_background'] = '';
+        $order['passepartout_bg_sheet_type_id'] = null;
+        $order['passepartout_bg_sheet_usage'] = null;
     }
+
     if (!empty($passepartout['passepartout_id'])) {
         $order['passepartout_id'] = $passepartout['passepartout_id'];
     }
@@ -1400,41 +1504,76 @@ function apply_passepartout_sheet_stock(
     $stmt->execute([$deduct, $deduct, $passepartoutId, $sheetTypeId]);
 }
 
-function resolve_passepartout_stock_action(PDO $conn, array $order): ?array
+function resolve_passepartout_stock_actions(PDO $conn, array $order): array
 {
-    $passepartout = resolve_passepartout(
+    $actions = [];
+    $use = normalize_passepartout_use($order['passepartout_use'] ?? '');
+
+    $primary = resolve_passepartout(
         $conn,
         isset($order['passepartout_id']) ? (int)$order['passepartout_id'] : null,
         $order['passepartout'] ?? null
     );
 
-    if (!$passepartout) {
-        return null;
-    }
+    if ($primary) {
+        $sheetTypeId = (int)($order['passepartout_sheet_type_id'] ?? 0);
+        $usage = (float)($order['passepartout_sheet_usage'] ?? 0);
 
-    $sheetTypeId = (int)($order['passepartout_sheet_type_id'] ?? 0);
-    $usage = (float)($order['passepartout_sheet_usage'] ?? 0);
-
-    if ($sheetTypeId <= 0 || $usage <= 0) {
-        $billing = calculate_passepartout_billing($conn, array_merge($order, [
-            'passepartout_id' => (int)$passepartout['id'],
-        ]));
-        if (!$billing) {
-            return null;
+        if ($sheetTypeId <= 0 || $usage <= 0) {
+            $billing = calculate_passepartout_billing($conn, array_merge($order, [
+                'passepartout_id' => (int)$primary['id'],
+            ]));
+            if ($billing) {
+                $sheetTypeId = (int)($billing['sheet_type_id'] ?? 0);
+                $usage = (float)($billing['sheet_usage'] ?? 0);
+            }
         }
-        $sheetTypeId = (int)$billing['sheet_type_id'];
-        $usage = (float)$billing['sheet_usage'];
+
+        if ($sheetTypeId > 0 && $usage > 0) {
+            $actions[] = [
+                'passepartout_id' => (int)$primary['id'],
+                'sheet_type_id' => $sheetTypeId,
+                'usage' => $usage,
+            ];
+        }
     }
 
-    if ($sheetTypeId <= 0 || $usage <= 0) {
-        return null;
+    if ($use === 'both') {
+        $bgPp = resolve_passepartout(
+            $conn,
+            isset($order['passepartout_background_id']) ? (int)$order['passepartout_background_id'] : null,
+            $order['passepartout_background'] ?? null
+        );
+        if ($bgPp) {
+            $sheetTypeId = (int)($order['passepartout_bg_sheet_type_id'] ?? 0);
+            $usage = (float)($order['passepartout_bg_sheet_usage'] ?? 0);
+
+            if ($sheetTypeId <= 0 || $usage <= 0) {
+                $layer = calculate_passepartout_layer_billing($conn, $order, (int)$bgPp['id']);
+                if ($layer) {
+                    $sheetTypeId = (int)$layer['sheet_type_id'];
+                    $usage = (float)$layer['sheet_usage'];
+                }
+            }
+
+            if ($sheetTypeId > 0 && $usage > 0) {
+                $actions[] = [
+                    'passepartout_id' => (int)$bgPp['id'],
+                    'sheet_type_id' => $sheetTypeId,
+                    'usage' => $usage,
+                ];
+            }
+        }
     }
 
-    return [
-        'passepartout_id' => (int)$passepartout['id'],
-        'sheet_type_id' => $sheetTypeId,
-        'usage' => $usage,
-    ];
+    return $actions;
+}
+
+function resolve_passepartout_stock_action(PDO $conn, array $order): ?array
+{
+    $actions = resolve_passepartout_stock_actions($conn, $order);
+
+    return $actions[0] ?? null;
 }
 
 function save_passepartout_sheet_types(PDO $conn, int $passepartoutId, array $sheetTypeIds): void

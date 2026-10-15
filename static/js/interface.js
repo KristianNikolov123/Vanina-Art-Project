@@ -68,11 +68,102 @@ function clearAddOrderForm() {
 
     expandOrderExtrasIfNeeded(form, null);
     syncHangingWeightField(form);
+    syncPassepartoutUseFields(form);
     form.dataset.autoPrice = '1';
+    setOrderFormAcceptedDateToday(form);
+}
+
+function formatDateDdMmYyyy(dateStr) {
+    if (!dateStr) return '';
+    const iso = String(dateStr).slice(0, 10);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) {
+        const [y, m, d] = iso.split('-');
+        return `${d}/${m}/${y}`;
+    }
+    if (String(dateStr).includes('/')) {
+        return String(dateStr);
+    }
+    return String(dateStr);
+}
+
+function todayDdMmYyyy() {
+    const now = new Date();
+    const d = String(now.getDate()).padStart(2, '0');
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const y = now.getFullYear();
+    return `${d}/${m}/${y}`;
+}
+
+function setOrderFormAcceptedDateToday(form) {
+    const accepted = form.querySelector('[name="accepted_date"]');
+    if (accepted) {
+        accepted.value = todayDdMmYyyy();
+    }
+}
+
+function resolvePassepartoutCatalogId(passepartoutLabel) {
+    if (!passepartoutLabel || !window.PASSEPARTOUT_MAP) {
+        return '';
+    }
+    if (window.PASSEPARTOUT_MAP[passepartoutLabel]) {
+        return String(window.PASSEPARTOUT_MAP[passepartoutLabel]);
+    }
+    const base = String(passepartoutLabel).replace(/\s+\([^)]+\)\s*$/, '');
+    const id = window.PASSEPARTOUT_MAP[base];
+    return id ? String(id) : '';
+}
+
+function formatDiscountDisplay(value) {
+    if (value === null || value === undefined || value === '') {
+        return '—';
+    }
+    const num = Number(value);
+    if (!Number.isFinite(num) || num <= 0) {
+        return '—';
+    }
+    const trimmed = num.toFixed(2).replace(/\.?0+$/, '');
+    return `${trimmed}%`;
 }
 
 function isVrazkaHanging(value) {
     return String(value || '').trim() === 'Връзка';
+}
+
+function syncPassepartoutUseFields(form) {
+    if (!form) return;
+
+    const useSelect = form.querySelector('[name="passepartout_use"]');
+    const primaryLabel = form.querySelector('.passepartout-primary-label');
+    const backgroundField = form.querySelector('.passepartout-background-field');
+    if (!useSelect) return;
+
+    const use = useSelect.value || 'passepartout';
+    const showBackground = use === 'both';
+
+    if (backgroundField) {
+        backgroundField.classList.toggle('d-none', !showBackground);
+        if (!showBackground) {
+            const bgSelect = backgroundField.querySelector('[name="passepartout_background_id"]');
+            if (bgSelect) bgSelect.value = '';
+        }
+    }
+
+    if (primaryLabel) {
+        if (use === 'background') {
+            primaryLabel.textContent = 'Фон (материал)';
+        } else {
+            primaryLabel.textContent = 'Паспарту';
+        }
+    }
+}
+
+function parsePrimaryPassepartoutLabel(label) {
+    if (!label) return '';
+    const text = String(label);
+    if (text.includes(' + ')) {
+        return text.split(' + ')[0].trim();
+    }
+    return text;
 }
 
 function syncHangingWeightField(form) {
@@ -125,14 +216,145 @@ function sortOrderRows(mode) {
     rows.forEach((row) => tbody.appendChild(row));
 }
 
+const ORDER_DAY_FILTER_KEY = 'vaninaOrdersDayFilter';
+
+function getOrderRowIsoDate(row) {
+    if (row.dataset.orderDate) {
+        return row.dataset.orderDate.slice(0, 10);
+    }
+    if (row.dataset.order) {
+        try {
+            const data = JSON.parse(row.dataset.order);
+            return (data.date || '').slice(0, 10);
+        } catch (e) {
+            return '';
+        }
+    }
+    return '';
+}
+
+function getOrderDayFilterValue() {
+    return document.getElementById('orderDayFilter')?.value || '';
+}
+
+function formatOrderDayLabel(isoDate) {
+    if (!isoDate) {
+        return 'Всички дни';
+    }
+    const parts = isoDate.split('-');
+    if (parts.length !== 3) {
+        return isoDate;
+    }
+    const dt = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+    if (Number.isNaN(dt.getTime())) {
+        return isoDate;
+    }
+    return dt.toLocaleDateString('bg-BG', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function todayIsoLocal() {
+    const dt = new Date();
+    const y = dt.getFullYear();
+    const m = String(dt.getMonth() + 1).padStart(2, '0');
+    const d = String(dt.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+}
+
+function shiftIsoDate(isoDate, dayDelta) {
+    const parts = isoDate.split('-').map(Number);
+    if (parts.length !== 3) {
+        return isoDate;
+    }
+    const dt = new Date(parts[0], parts[1] - 1, parts[2]);
+    dt.setDate(dt.getDate() + dayDelta);
+    const y = dt.getFullYear();
+    const m = String(dt.getMonth() + 1).padStart(2, '0');
+    const d = String(dt.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+}
+
+function setOrderDayFilter(isoDate, persist) {
+    const input = document.getElementById('orderDayFilter');
+    const label = document.getElementById('orderDayPickerLabel');
+    const pickerBtn = document.getElementById('orderDayPickerBtn');
+    const clearBtn = document.getElementById('orderDayClear');
+    if (!input || !label) {
+        return;
+    }
+
+    input.value = isoDate || '';
+    label.textContent = formatOrderDayLabel(isoDate);
+    pickerBtn?.classList.toggle('active', Boolean(isoDate));
+    clearBtn?.classList.toggle('d-none', !isoDate);
+
+    if (persist !== false) {
+        if (isoDate) {
+            sessionStorage.setItem(ORDER_DAY_FILTER_KEY, isoDate);
+        } else {
+            sessionStorage.removeItem(ORDER_DAY_FILTER_KEY);
+        }
+    }
+
+    applyOrderRowVisibility();
+}
+
+function initOrderDayFilter() {
+    const input = document.getElementById('orderDayFilter');
+    const pickerBtn = document.getElementById('orderDayPickerBtn');
+    const prevBtn = document.getElementById('orderDayPrev');
+    const nextBtn = document.getElementById('orderDayNext');
+    const clearBtn = document.getElementById('orderDayClear');
+    if (!input || !pickerBtn) {
+        return;
+    }
+
+    const saved = sessionStorage.getItem(ORDER_DAY_FILTER_KEY) || '';
+    if (saved) {
+        setOrderDayFilter(saved, false);
+    } else {
+        setOrderDayFilter('', false);
+    }
+
+    pickerBtn.addEventListener('click', () => {
+        if (typeof input.showPicker === 'function') {
+            input.showPicker();
+        } else {
+            input.click();
+        }
+    });
+
+    input.addEventListener('change', () => {
+        setOrderDayFilter(input.value || '');
+    });
+
+    prevBtn?.addEventListener('click', () => {
+        const current = getOrderDayFilterValue() || todayIsoLocal();
+        setOrderDayFilter(shiftIsoDate(current, -1));
+    });
+
+    nextBtn?.addEventListener('click', () => {
+        const current = getOrderDayFilterValue() || todayIsoLocal();
+        setOrderDayFilter(shiftIsoDate(current, 1));
+    });
+
+    clearBtn?.addEventListener('click', () => {
+        setOrderDayFilter('');
+    });
+}
+
 function applyOrderRowVisibility() {
-    const searchText = (document.getElementById('searchInput')?.value || '').toLowerCase();
+    const searchRaw = document.getElementById('searchInput')?.value || '';
+    const dayFilter = getOrderDayFilterValue();
     const paymentFilter = document.querySelector('[data-filter-group="payment"].active')?.dataset.filter;
     const collectionFilter = document.querySelector('[data-filter-group="collection"].active')?.dataset.filter;
 
     document.querySelectorAll('.order-row').forEach((row) => {
-        const text = row.textContent.toLowerCase();
-        const matchesSearch = !searchText || text.includes(searchText);
+        const haystack = typeof buildOrderRowSearchHaystack === 'function'
+            ? buildOrderRowSearchHaystack(row)
+            : (row.textContent || '');
+        const matchesSearch = typeof rowMatchesTokenSearch === 'function'
+            ? rowMatchesTokenSearch(haystack, searchRaw)
+            : haystack.toLowerCase().includes(searchRaw.trim().toLowerCase());
 
         const order = row.dataset.order ? JSON.parse(row.dataset.order) : null;
         const paid = order ? Boolean(order.paid) : row.querySelector('.badge.bg-success') !== null;
@@ -146,7 +368,9 @@ function applyOrderRowVisibility() {
         if (collectionFilter === 'collected') matchesCollection = collected;
         if (collectionFilter === 'uncollected') matchesCollection = !collected;
 
-        row.style.display = matchesSearch && matchesPayment && matchesCollection ? '' : 'none';
+        const matchesDay = !dayFilter || getOrderRowIsoDate(row) === dayFilter;
+
+        row.style.display = matchesSearch && matchesPayment && matchesCollection && matchesDay ? '' : 'none';
     });
 }
 
@@ -236,7 +460,16 @@ function viewOrder(orderId) {
         : String(data.order_number ?? orderId);
 
     document.getElementById('viewOrderNumber').textContent = `№ ${orderLabel}`;
-    document.getElementById('viewOrderDate').textContent = row.querySelector('.date')?.textContent.trim() || data.date || '—';
+    const datesCell = row.querySelector('.order-dates');
+    const acceptedCell = datesCell?.querySelector('.date-accepted') || row.querySelector('.date-accepted');
+    const pickupCell = datesCell?.querySelector('.date-pickup') || row.querySelector('.date-pickup');
+    const pickupFromCell = pickupCell?.textContent.replace(/^получ\.\s*/i, '').trim();
+    document.getElementById('viewOrderAcceptedDate').textContent = acceptedCell?.textContent.trim()
+        || formatDateDdMmYyyy(data.accepted_date)
+        || '—';
+    document.getElementById('viewOrderPickupDate').textContent = pickupFromCell
+        || formatDateDdMmYyyy(data.date)
+        || '—';
     document.getElementById('viewOrderSize').textContent = data.width && data.height
         ? `${data.width} × ${data.height} cm`
         : '—';
@@ -279,9 +512,7 @@ function viewOrder(orderId) {
     document.getElementById('viewOrderAdvance').textContent = data.advance_payment != null && data.advance_payment !== ''
         ? `${data.advance_payment} €`
         : '—';
-    document.getElementById('viewOrderDiscount').textContent = data.discount != null && data.discount !== ''
-        ? `${data.discount} €`
-        : '—';
+    document.getElementById('viewOrderDiscount').textContent = formatDiscountDisplay(data.discount);
 
     const extrasLabels = buildOrderExtrasLabels(data);
     const extrasCard = document.getElementById('viewOrderExtrasCard');
@@ -320,16 +551,39 @@ function editOrder(orderId) {
     const form = document.getElementById('editOrderForm');
     form.dataset.autoPrice = '1';
 
-    form.querySelector('[name="date"]').value = toISODate(data.date);
+    const acceptedInput = form.querySelector('[name="accepted_date"]');
+    if (acceptedInput) {
+        acceptedInput.value = formatDateDdMmYyyy(data.accepted_date || data.date);
+    }
+    form.querySelector('[name="date"]').value = formatDateDdMmYyyy(data.date);
     form.querySelector('[name="width"]').value = data.width ?? '';
     form.querySelector('[name="height"]').value = data.height ?? '';
     form.querySelector('[name="profile"]').value = data.profile ?? '';
     form.querySelector('[name="glass"]').value = data.glass ?? '';
     const passepartoutSelect = form.querySelector('[name="passepartout_id"]');
-    if (passepartoutSelect && data.passepartout && window.PASSEPARTOUT_MAP) {
-        const passepartoutId = window.PASSEPARTOUT_MAP[data.passepartout];
-        passepartoutSelect.value = passepartoutId ? String(passepartoutId) : '';
+    if (passepartoutSelect && data.passepartout) {
+        passepartoutSelect.value = resolvePassepartoutCatalogId(parsePrimaryPassepartoutLabel(data.passepartout));
     }
+    const passepartoutUse = form.querySelector('[name="passepartout_use"]');
+    if (passepartoutUse) {
+        let use = data.passepartout_use || '';
+        if (!use && data.passepartout) {
+            const label = String(data.passepartout);
+            if (label.includes(' + ') || (data.passepartout_background && String(data.passepartout_background).trim() !== '')) {
+                use = 'both';
+            } else if (label.includes('(фон)')) {
+                use = 'background';
+            } else {
+                use = 'passepartout';
+            }
+        }
+        passepartoutUse.value = ['passepartout', 'background', 'both'].includes(use) ? use : 'passepartout';
+    }
+    const passepartoutBgSelect = form.querySelector('[name="passepartout_background_id"]');
+    if (passepartoutBgSelect && data.passepartout_background) {
+        passepartoutBgSelect.value = resolvePassepartoutCatalogId(data.passepartout_background);
+    }
+    syncPassepartoutUseFields(form);
     form.querySelector('[name="back"]').value = data.back ?? '';
     form.querySelector('[name="hanging"]').value = data.hanging ?? '';
     const weightKg = form.querySelector('[name="weight_kg"]');
@@ -576,9 +830,35 @@ async function updateOrderPricing(form) {
             const priceDetail = pp.pricing_mode === 'tier'
                 ? `, ${pp.tier_label} (${pp.unit_price.toFixed(2)} €/бр.)`
                 : '';
-            lines.push(
-                `Паспарту: ${pp.bill_width}×${pp.bill_height} cm${multiSheetText}${openingsText}${priceDetail}${usageText}${labor} → ${pricing.passepartout_cost.toFixed(2)} €`
-            );
+            const formatPpLayerLine = (layer, roleLabel, shareCost) => {
+                if (!layer || !layer.passepartout_name) return '';
+                const layerUsage = layer.sheet_usage
+                    ? `, ${layer.sheet_usage} листа ${layer.sheet_name || pp.sheet_name}`
+                    : '';
+                const layerPrice = layer.pricing_mode === 'tier' && layer.tier_label
+                    ? `, ${layer.tier_label} (${layer.unit_price.toFixed(2)} €/бр.)`
+                    : '';
+                const costPart = shareCost != null ? ` → ${shareCost.toFixed(2)} €` : '';
+                return `${roleLabel}: ${layer.passepartout_name}, ${layer.bill_width}×${layer.bill_height} cm${layerPrice}${layerUsage}${costPart}`;
+            };
+
+            if (pp.passepartout_use === 'both' && pp.background_layer) {
+                const bg = pp.background_layer;
+                const ppMaterial = Math.max(0, pricing.passepartout_material_cost - (bg.cost || 0));
+                const primaryLine = formatPpLayerLine(pp, 'Паспарту', ppMaterial);
+                const bgLine = formatPpLayerLine(bg, 'Фон', bg.cost);
+                if (primaryLine) lines.push(primaryLine);
+                if (bgLine) lines.push(bgLine);
+                if (pricing.passepartout_labor_cost > 0) {
+                    lines.push(`Рязане паспарту → ${pricing.passepartout_labor_cost.toFixed(2)} €`);
+                }
+                lines.push(`Паспарту общо → ${pricing.passepartout_cost.toFixed(2)} €`);
+            } else {
+                const useLabel = pp.use_label ? ` (${pp.use_label})` : '';
+                lines.push(
+                    `Паспарту${useLabel}: ${pp.bill_width}×${pp.bill_height} cm${multiSheetText}${openingsText}${priceDetail}${usageText}${labor} → ${pricing.passepartout_cost.toFixed(2)} €`
+                );
+            }
         } else if (pricing.passepartout_labor_cost > 0) {
             lines.push(`Рязане паспарту на клиент → ${pricing.passepartout_labor_cost.toFixed(2)} €`);
         }
@@ -595,6 +875,12 @@ async function updateOrderPricing(form) {
         }
         if (pricing.student_discount_amount > 0) {
             lines.push(`Ученик/студент → −${pricing.student_discount_amount.toFixed(2)} €`);
+        }
+        if (pricing.manual_discount_amount > 0) {
+            const pct = pricing.manual_discount_percent > 0
+                ? ` (${pricing.manual_discount_percent}%)`
+                : '';
+            lines.push(`Ръчна отстъпка${pct} → −${pricing.manual_discount_amount.toFixed(2)} €`);
         }
         if (pricing.urgent_surcharge > 0) {
             lines.push(`Спешна поръчка (+50%) → +${pricing.urgent_surcharge.toFixed(2)} €`);
@@ -681,6 +967,8 @@ document.addEventListener('DOMContentLoaded', function () {
     tooltipTriggerList.map(function (tooltipTriggerEl) {
         return new bootstrap.Tooltip(tooltipTriggerEl);
     });
+
+    initOrderDayFilter();
 
     const searchInput = document.getElementById('searchInput');
     if (searchInput) {
@@ -781,6 +1069,8 @@ document.addEventListener('DOMContentLoaded', function () {
             || el.name === 'additional_profiles[]'
             || el.name === 'extra_services[]'
             || el.name === 'passepartout_id'
+            || el.name === 'passepartout_background_id'
+            || el.name === 'passepartout_use'
             || el.name === 'back'
             || el.name === 'hanging'
             || el.name === 'weight_kg'
@@ -810,6 +1100,9 @@ document.addEventListener('DOMContentLoaded', function () {
             if (event.target && event.target.name === 'hanging') {
                 syncHangingWeightField(form);
             }
+            if (event.target && event.target.name === 'passepartout_use') {
+                syncPassepartoutUseFields(form);
+            }
             if (shouldRecalculatePrice(event)) {
                 updateOrderPricing(form);
             }
@@ -819,10 +1112,15 @@ document.addEventListener('DOMContentLoaded', function () {
             if (event.target && event.target.name === 'hanging') {
                 syncHangingWeightField(form);
             }
+            if (event.target && event.target.name === 'passepartout_use') {
+                syncPassepartoutUseFields(form);
+            }
             if (shouldRecalculatePrice(event)) {
                 updateOrderPricing(form);
             }
         });
+
+        syncPassepartoutUseFields(form);
     });
 
     const addOrderModal = document.getElementById('addOrderModal');
@@ -833,6 +1131,7 @@ document.addEventListener('DOMContentLoaded', function () {
             form.dataset.autoPrice = '1';
             const priceInput = form.querySelector('[name="price"]');
             if (priceInput) priceInput.value = '';
+            setOrderFormAcceptedDateToday(form);
             expandOrderExtrasIfNeeded(form, null);
             syncHangingWeightField(form);
         });
@@ -859,13 +1158,16 @@ document.addEventListener('DOMContentLoaded', function () {
     if (viewOrderEditBtn) {
         viewOrderEditBtn.addEventListener('click', editOrderFromView);
     }
-});
 
-function toISODate(dateStr) {
-    if (!dateStr) return '';
-    if (dateStr.includes('/')) {
-        const [d, m, y] = dateStr.split('/');
-        return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
-    }
-    return dateStr;
-}
+    document.addEventListener('click', (event) => {
+        const preset = event.target.closest('.order-discount-preset');
+        if (!preset) return;
+        const form = preset.closest('.order-form');
+        if (!form) return;
+        const input = form.querySelector('.order-discount-input');
+        if (!input) return;
+        input.value = preset.dataset.percent || '';
+        form.dataset.autoPrice = '1';
+        updateOrderPricing(form);
+    });
+});

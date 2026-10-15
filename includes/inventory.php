@@ -40,8 +40,7 @@ function apply_stock_for_order(PDO $conn, array $order, int $direction): void
         }
     }
 
-    $stockAction = resolve_passepartout_stock_action($conn, $order);
-    if ($stockAction) {
+    foreach (resolve_passepartout_stock_actions($conn, $order) as $stockAction) {
         apply_passepartout_sheet_stock(
             $conn,
             $stockAction['passepartout_id'],

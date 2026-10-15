@@ -8,9 +8,15 @@
             <div class="modal-body">
                 <div class="row mb-3">
                     <div class="col-md-4">
-                        <div class="text-muted small">Дата</div>
-                        <div id="viewOrderDate"></div>
+                        <div class="text-muted small">Дата на приемане</div>
+                        <div id="viewOrderAcceptedDate"></div>
                     </div>
+                    <div class="col-md-4">
+                        <div class="text-muted small">Дата на получаване</div>
+                        <div id="viewOrderPickupDate"></div>
+                    </div>
+                </div>
+                <div class="row mb-3">
                     <div class="col-md-4">
                         <div class="text-muted small">Размер</div>
                         <div id="viewOrderSize"></div>

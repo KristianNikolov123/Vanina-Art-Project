@@ -37,9 +37,28 @@ $additionalProfilesId = $additionalProfilesId ?? 'additionalProfiles';
             <?php endforeach; ?>
         </select>
     </div>
-    <div class="col-md-6 mb-3">
-        <label class="form-label">Паспарту</label>
+    <div class="col-md-3 mb-3">
+        <label class="form-label">Употреба</label>
+        <select class="form-select order-price-trigger" name="passepartout_use">
+            <option value="passepartout">Паспарту</option>
+            <option value="background">Фон</option>
+            <option value="both">Паспарту + фон</option>
+        </select>
+    </div>
+</div>
+<div class="row passepartout-materials-row">
+    <div class="col-md-6 mb-3 passepartout-primary-field">
+        <label class="form-label passepartout-primary-label">Паспарту</label>
         <select class="form-select order-price-trigger" name="passepartout_id">
+            <option value=""></option>
+            <?php foreach ($passepartouts as $passepartout): ?>
+            <option value="<?= (int)$passepartout['id'] ?>"><?= e($passepartout['name']) ?></option>
+            <?php endforeach; ?>
+        </select>
+    </div>
+    <div class="col-md-6 mb-3 passepartout-background-field d-none">
+        <label class="form-label">Фон (втори материал)</label>
+        <select class="form-select order-price-trigger" name="passepartout_background_id">
             <option value=""></option>
             <?php foreach ($passepartouts as $passepartout): ?>
             <option value="<?= (int)$passepartout['id'] ?>"><?= e($passepartout['name']) ?></option>

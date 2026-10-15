@@ -121,7 +121,7 @@ if ($uri === '/archives') {
         'completed_orders' => $completed_orders,
         'deleted_orders' => $deleted_orders,
         'services' => $services,
-        'extra_js' => ['order-view.js', 'archives.js'],
+        'extra_js' => ['search-utils.js', 'order-view.js', 'archives.js'],
     ]);
     exit;
 }
@@ -159,7 +159,7 @@ if ($uri === '/interface') {
         'hanging_options' => $hanging_options,
         'services' => $services,
         'extra_css' => 'interface.css',
-        'extra_js' => 'interface.js',
+        'extra_js' => ['search-utils.js', 'interface.js'],
     ]);
     exit;
 }
@@ -506,6 +506,7 @@ if (preg_match('#^/add_sub_order/(\d+)$#', $uri, $m) && $method === 'POST') {
             $mainOrder['customer_name'],
             $mainOrder['customer_phone'] ?? null
         );
+        $order['accepted_date'] = $mainOrder['accepted_date'] ?? $order['accepted_date'];
         insert_order_row($conn, $order, (int)$mainOrder['order_number'], $subOrderNumber);
 
         deduct_stock_for_order($conn, $order['stock_order']);

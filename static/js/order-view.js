@@ -65,7 +65,31 @@ function viewOrder(orderId) {
         : String(data.order_number ?? orderId);
 
     document.getElementById('viewOrderNumber').textContent = `№ ${orderLabel}`;
-    document.getElementById('viewOrderDate').textContent = row.querySelector('.date')?.textContent.trim() || data.date || '—';
+    const formatDateDdMmYyyy = (dateStr) => {
+        if (!dateStr) return '';
+        const iso = String(dateStr).slice(0, 10);
+        if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) {
+            const [y, m, d] = iso.split('-');
+            return `${d}/${m}/${y}`;
+        }
+        return String(dateStr);
+    };
+    const datesCell = row.querySelector('.order-dates');
+    const acceptedCell = datesCell?.querySelector('.date-accepted') || row.querySelector('.date-accepted');
+    const pickupCell = datesCell?.querySelector('.date-pickup') || row.querySelector('.date-pickup') || row.querySelector('.date');
+    const pickupFromCell = pickupCell?.textContent.replace(/^получ\.\s*/i, '').trim();
+    const acceptedEl = document.getElementById('viewOrderAcceptedDate');
+    const pickupEl = document.getElementById('viewOrderPickupDate');
+    if (acceptedEl) {
+        acceptedEl.textContent = acceptedCell?.textContent.trim()
+            || formatDateDdMmYyyy(data.accepted_date)
+            || '—';
+    }
+    if (pickupEl) {
+        pickupEl.textContent = pickupFromCell
+            || formatDateDdMmYyyy(data.date)
+            || '—';
+    }
     document.getElementById('viewOrderSize').textContent = data.width && data.height
         ? `${data.width} × ${data.height} cm`
         : '—';
@@ -112,8 +136,9 @@ function viewOrder(orderId) {
     document.getElementById('viewOrderAdvance').textContent = data.advance_payment != null && data.advance_payment !== ''
         ? `${data.advance_payment} €`
         : '—';
-    document.getElementById('viewOrderDiscount').textContent = data.discount != null && data.discount !== ''
-        ? `${data.discount} €`
+    const discountNum = Number(data.discount);
+    document.getElementById('viewOrderDiscount').textContent = data.discount != null && data.discount !== '' && Number.isFinite(discountNum) && discountNum > 0
+        ? `${String(discountNum).replace(/\.?0+$/, '')}%`
         : '—';
 
     const extrasLabels = buildOrderExtrasLabels(data);

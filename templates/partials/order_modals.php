@@ -8,15 +8,17 @@
             <div class="modal-body">
                 <form id="addOrderForm" class="order-form" action="<?= url_for('add_order') ?>" method="post">
                     <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">Дата на получаване</label>
-                            <input type="date" class="form-control" name="date">
-                        </div>
-                        <div class="col-md-3 mb-3">
+                        <?php
+                        $showAcceptedDate = true;
+                        $acceptedDateId = 'addAcceptedDate';
+                        $pickupDateId = 'addPickupDate';
+                        include __DIR__ . '/order_form_dates.php';
+                        ?>
+                        <div class="col-md-4 mb-3">
                             <label class="form-label">Ширина (cm)</label>
                             <input type="text" inputmode="decimal" autocomplete="off" class="form-control order-price-trigger" name="width" step="0.1">
                         </div>
-                        <div class="col-md-3 mb-3">
+                        <div class="col-md-4 mb-3">
                             <label class="form-label">Височина (cm)</label>
                             <input type="text" inputmode="decimal" autocomplete="off" class="form-control order-price-trigger" name="height" step="0.1">
                         </div>
@@ -47,11 +49,7 @@
                             <label class="form-label">Аванс</label>
                             <input type="text" inputmode="decimal" autocomplete="off" class="form-control" name="advance_payment" step="0.01">
                         </div>
-                        <div class="col-md-4 mb-3">
-                            <label class="form-label">Ръчна отстъпка (€)</label>
-                            <input type="text" inputmode="decimal" autocomplete="off" class="form-control order-price-trigger" name="discount" step="0.01">
-                            <div class="form-text">Обемна (−5%/−10%) и ученическа се смятат автоматично</div>
-                        </div>
+                        <?php include __DIR__ . '/order_form_discount.php'; ?>
                     </div>
                     <div class="row">
                         <div class="col-md-6 mb-3">
@@ -92,15 +90,17 @@
             <div class="modal-body">
                 <form id="editOrderForm" class="order-form" method="post">
                     <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">Дата на получаване</label>
-                            <input type="date" class="form-control" name="date" id="editDate">
-                        </div>
-                        <div class="col-md-3 mb-3">
+                        <?php
+                        $showAcceptedDate = true;
+                        $acceptedDateId = 'editAcceptedDate';
+                        $pickupDateId = 'editDate';
+                        include __DIR__ . '/order_form_dates.php';
+                        ?>
+                        <div class="col-md-4 mb-3">
                             <label class="form-label">Ширина (cm)</label>
                             <input type="text" inputmode="decimal" autocomplete="off" class="form-control order-price-trigger" name="width" step="0.1">
                         </div>
-                        <div class="col-md-3 mb-3">
+                        <div class="col-md-4 mb-3">
                             <label class="form-label">Височина (cm)</label>
                             <input type="text" inputmode="decimal" autocomplete="off" class="form-control order-price-trigger" name="height" step="0.1">
                         </div>
@@ -131,11 +131,7 @@
                             <label class="form-label">Аванс</label>
                             <input type="text" inputmode="decimal" autocomplete="off" class="form-control" name="advance_payment" step="0.01">
                         </div>
-                        <div class="col-md-4 mb-3">
-                            <label class="form-label">Ръчна отстъпка (€)</label>
-                            <input type="text" inputmode="decimal" autocomplete="off" class="form-control order-price-trigger" name="discount" step="0.01">
-                            <div class="form-text">Обемна (−5%/−10%) и ученическа се смятат автоматично</div>
-                        </div>
+                        <?php include __DIR__ . '/order_form_discount.php'; ?>
                     </div>
                     <div class="row">
                         <div class="col-md-6 mb-3">
@@ -171,15 +167,16 @@
             <div class="modal-body">
                 <form id="addSubOrderForm" class="order-form" method="post">
                     <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">Дата на получаване</label>
-                            <input type="date" class="form-control" name="date">
-                        </div>
-                        <div class="col-md-3 mb-3">
+                        <?php
+                        $showAcceptedDate = false;
+                        $pickupDateId = 'subPickupDate';
+                        include __DIR__ . '/order_form_dates.php';
+                        ?>
+                        <div class="col-md-4 mb-3">
                             <label class="form-label">Ширина (cm)</label>
                             <input type="text" inputmode="decimal" autocomplete="off" class="form-control order-price-trigger" name="width" step="0.1">
                         </div>
-                        <div class="col-md-3 mb-3">
+                        <div class="col-md-4 mb-3">
                             <label class="form-label">Височина (cm)</label>
                             <input type="text" inputmode="decimal" autocomplete="off" class="form-control order-price-trigger" name="height" step="0.1">
                         </div>
@@ -202,11 +199,7 @@
                             <label class="form-label">Аванс</label>
                             <input type="text" inputmode="decimal" autocomplete="off" class="form-control" name="advance_payment" step="0.01">
                         </div>
-                        <div class="col-md-4 mb-3">
-                            <label class="form-label">Ръчна отстъпка (€)</label>
-                            <input type="text" inputmode="decimal" autocomplete="off" class="form-control order-price-trigger" name="discount" step="0.01">
-                            <div class="form-text">Обемна (−5%/−10%) и ученическа се смятат автоматично</div>
-                        </div>
+                        <?php include __DIR__ . '/order_form_discount.php'; ?>
                         <div class="col-md-4 mb-3">
                             <div class="form-check mt-4">
                                 <input type="checkbox" class="form-check-input" name="paid" id="subPaid">

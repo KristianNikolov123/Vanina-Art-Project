@@ -8,9 +8,15 @@ document.addEventListener('DOMContentLoaded', function () {
     const searchInput = document.getElementById('archiveSearchInput');
     if (searchInput) {
         searchInput.addEventListener('input', function () {
-            const searchText = this.value.toLowerCase();
+            const searchRaw = this.value;
             document.querySelectorAll('.archive-table tbody .order-row').forEach((row) => {
-                row.style.display = row.textContent.toLowerCase().includes(searchText) ? '' : 'none';
+                const haystack = typeof buildOrderRowSearchHaystack === 'function'
+                    ? buildOrderRowSearchHaystack(row)
+                    : (row.textContent || '');
+                const match = typeof rowMatchesTokenSearch === 'function'
+                    ? rowMatchesTokenSearch(haystack, searchRaw)
+                    : haystack.toLowerCase().includes(searchRaw.trim().toLowerCase());
+                row.style.display = match ? '' : 'none';
             });
         });
     }

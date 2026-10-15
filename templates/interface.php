@@ -15,7 +15,7 @@
         <div class="orders-toolbar__left">
             <div class="orders-toolbar__search input-group input-group-sm">
                 <span class="input-group-text"><i class="fas fa-search"></i></span>
-                <input type="text" id="searchInput" class="form-control" placeholder="Търсене...">
+                <input type="text" id="searchInput" class="form-control" placeholder="Няколко думи: име, №, телефон…">
             </div>
             <label class="orders-toolbar__sort" title="Подредба">
                 <i class="fas fa-sort-amount-down"></i>
@@ -26,6 +26,24 @@
                     <option value="date-asc">Дата ↑</option>
                 </select>
             </label>
+            <div class="orders-toolbar__day" title="Поръчки за избран ден">
+                <div class="btn-group btn-group-sm" role="group" aria-label="Филтър по ден">
+                    <button type="button" class="btn btn-outline-secondary" id="orderDayPrev" aria-label="Предишен ден">
+                        <i class="fas fa-chevron-left"></i>
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary orders-toolbar__day-picker" id="orderDayPickerBtn">
+                        <i class="fas fa-calendar-day me-1"></i>
+                        <span id="orderDayPickerLabel">Всички дни</span>
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary" id="orderDayNext" aria-label="Следващ ден">
+                        <i class="fas fa-chevron-right"></i>
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary d-none" id="orderDayClear" title="Премахни филтъра по ден" aria-label="Всички дни">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <input type="date" class="visually-hidden" id="orderDayFilter" tabindex="-1" aria-hidden="true">
+            </div>
         </div>
         <div class="orders-toolbar__filters">
             <button type="button" class="btn btn-outline-secondary orders-toolbar__filter-all active" data-filter="all">Всички</button>
@@ -82,10 +100,19 @@
                         ?>
                         <tr class="order-row<?= $hasExtras ? ' order-row--extras' : '' ?>"
                             data-order-id="<?= (int)$order['id'] ?>"
+                            data-order-date="<?= e($order['date'] ?? '') ?>"
                             data-order="<?= $orderData ?>"
                             <?= $extrasTitle !== '' ? 'title="' . e($extrasTitle) . '"' : '' ?>>
                             <td><?= (int)$order['order_number'] ?><?= $order['sub_order_number'] > 0 ? '.' . (int)$order['sub_order_number'] : '' ?></td>
-                            <td class="date"><?= format_date_ddmmyyyy($order['date']) ?></td>
+                            <td class="order-dates">
+                                <span class="date-accepted"><?= format_date_ddmmyyyy(order_accepted_date_iso($order)) ?></span>
+                                <?php
+                                $pickupFormatted = format_date_ddmmyyyy($order['date'] ?? '');
+                                if ($pickupFormatted !== ''):
+                                ?>
+                                <small class="text-muted d-block date-pickup">получ. <?= e($pickupFormatted) ?></small>
+                                <?php endif; ?>
+                            </td>
                             <td><span class="width"><?= e($order['width']) ?></span>x<span class="height"><?= e($order['height']) ?></span> cm</td>
                             <td class="profile"><?= e($order['profile']) ?></td>
                             <td class="additional-profiles"><?= e($order['additional_profiles']) ?></td>
@@ -102,7 +129,21 @@
                             <td class="glass"><?= short_glass($order['glass']) ?></td>
                             <td class="back"><?= short_back($order['back']) ?></td>
                             <td class="passepartout">
+                                <?php
+                                $ppUse = normalize_passepartout_use($order['passepartout_use'] ?? '');
+                                $ppBgName = trim($order['passepartout_background'] ?? '');
+                                if ($ppUse === 'both' && $ppBgName !== ''):
+                                    $ppCombined = trim($order['passepartout'] ?? '');
+                                    $ppPrimaryLine = $ppCombined;
+                                    if (str_contains($ppCombined, ' + ')) {
+                                        $ppPrimaryLine = explode(' + ', $ppCombined, 2)[0];
+                                    }
+                                ?>
+                                <?= e($ppPrimaryLine) ?>
+                                <small class="text-muted d-block"><?= e($ppBgName) ?> (фон)</small>
+                                <?php else: ?>
                                 <?= e($order['passepartout']) ?>
+                                <?php endif; ?>
                                 <?php if (!empty($order['passepartout_bill_width']) && !empty($order['passepartout_bill_height'])): ?>
                                     <small class="text-muted d-block">фактурирано: <?= (int)$order['passepartout_bill_width'] ?>×<?= (int)$order['passepartout_bill_height'] ?> cm</small>
                                 <?php endif; ?>
@@ -110,7 +151,7 @@
                             <td class="hanging"><?= short_hanging($order['hanging']) ?></td>
                             <td class="price"><?= e($order['price']) ?></td>
                             <td class="advance-payment"><?= e($order['advance_payment']) ?></td>
-                            <td class="discount"><?= e($order['discount']) ?></td>
+                            <td class="discount"><?= e(format_order_discount_display($order['discount'])) ?></td>
                             <td class="customer-name">
                                 <?= e($order['customer_name']) ?>
                                 <?php if (!empty(trim($order['customer_phone'] ?? ''))): ?>

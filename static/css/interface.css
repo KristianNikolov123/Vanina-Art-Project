@@ -37,6 +37,22 @@
     cursor: pointer;
 }
 
+.orders-toolbar__day .btn {
+    font-size: 0.8125rem;
+    padding: 0.32rem 0.55rem;
+}
+
+.orders-toolbar__day-picker {
+    min-width: 7.5rem;
+}
+
+.orders-toolbar__day-picker.active {
+    background-color: #e7f1ff;
+    border-color: #0d6efd;
+    color: #0d6efd;
+    font-weight: 600;
+}
+
 .orders-toolbar__filters {
     display: flex;
     flex-wrap: wrap;

@@ -122,7 +122,94 @@ function format_date_ddmmyyyy(?string $dateStr): string
         return '';
     }
     $dt = DateTime::createFromFormat('Y-m-d', $dateStr);
+    if (!$dt && str_contains($dateStr, '/')) {
+        $dt = DateTime::createFromFormat('d/m/Y', $dateStr);
+    }
     return $dt ? $dt->format('d/m/Y') : $dateStr;
+}
+
+function parse_user_date_to_iso(?string $input): ?string
+{
+    $input = trim($input ?? '');
+    if ($input === '') {
+        return null;
+    }
+    if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $input)) {
+        return $input;
+    }
+    $dt = DateTime::createFromFormat('d/m/Y', $input);
+    if (!$dt) {
+        $dt = DateTime::createFromFormat('d/m/y', $input);
+    }
+    if (!$dt) {
+        $dt = DateTime::createFromFormat('Y-m-d', $input);
+    }
+
+    return $dt ? $dt->format('Y-m-d') : null;
+}
+
+function order_accepted_date_iso(array $order): string
+{
+    $accepted = trim($order['accepted_date'] ?? '');
+    if ($accepted !== '') {
+        return $accepted;
+    }
+
+    return trim($order['date'] ?? '');
+}
+
+function normalize_passepartout_use(?string $use): string
+{
+    $use = trim($use ?? '');
+    return in_array($use, ['passepartout', 'background', 'both'], true) ? $use : '';
+}
+
+function passepartout_material_layer_count(string $use): int
+{
+    return match ($use) {
+        'both' => 2,
+        'passepartout', 'background' => 1,
+        default => 0,
+    };
+}
+
+function format_passepartout_order_label(string $name, string $use): string
+{
+    if ($name === '') {
+        return '';
+    }
+
+    return match (normalize_passepartout_use($use)) {
+        'background' => $name . ' (фон)',
+        'passepartout' => $name . ' (паспарту)',
+        default => $name,
+    };
+}
+
+function format_passepartout_both_order_label(string $passepartoutName, string $backgroundName): string
+{
+    $parts = [];
+    if (trim($passepartoutName) !== '') {
+        $parts[] = trim($passepartoutName) . ' (паспарту)';
+    }
+    if (trim($backgroundName) !== '') {
+        $parts[] = trim($backgroundName) . ' (фон)';
+    }
+
+    return implode(' + ', $parts);
+}
+
+function format_order_discount_display($discount): string
+{
+    if ($discount === null || $discount === '') {
+        return '';
+    }
+    $value = (float)$discount;
+    if ($value <= 0) {
+        return '';
+    }
+
+    return rtrim(rtrim(number_format($value, 2, '.', ''), '0'), '.') . '%';
 }
 
 function short_glass(?string $value): string
@@ -250,6 +337,8 @@ function order_view_data(array $order): array
         'order_number' => (int)$order['order_number'],
         'sub_order_number' => (int)$order['sub_order_number'],
         'date' => $order['date'] ?? '',
+        'accepted_date' => order_accepted_date_iso($order),
+        'passepartout_use' => normalize_passepartout_use($order['passepartout_use'] ?? ''),
         'width' => $order['width'],
         'height' => $order['height'],
         'profile' => $order['profile'] ?? '',
@@ -258,6 +347,7 @@ function order_view_data(array $order): array
         'glass' => $order['glass'] ?? '',
         'back' => $order['back'] ?? '',
         'passepartout' => $order['passepartout'] ?? '',
+        'passepartout_background' => $order['passepartout_background'] ?? '',
         'passepartout_bill_width' => $order['passepartout_bill_width'] ?? null,
         'passepartout_bill_height' => $order['passepartout_bill_height'] ?? null,
         'hanging' => $order['hanging'] ?? '',
@@ -800,6 +890,7 @@ function get_additional_profiles(): ?string
 function build_order_from_post(?string $customerName = null, ?string $customerPhone = null): array
 {
     $passepartoutId = (int)($_POST['passepartout_id'] ?? 0);
+    $passepartoutBackgroundId = (int)($_POST['passepartout_background_id'] ?? 0);
     $passepartoutName = trim($_POST['passepartout'] ?? '');
 
     $extraServices = $_POST['extra_services'] ?? [];
@@ -814,6 +905,7 @@ function build_order_from_post(?string $customerName = null, ?string $customerPh
         'glass' => $_POST['glass'] ?? '',
         'passepartout' => $passepartoutName,
         'passepartout_id' => $passepartoutId > 0 ? $passepartoutId : null,
+        'passepartout_background_id' => $passepartoutBackgroundId > 0 ? $passepartoutBackgroundId : null,
         'back' => trim($_POST['back'] ?? ''),
         'hanging' => trim($_POST['hanging'] ?? ''),
         'weight_kg' => ($_POST['weight_kg'] ?? '') !== '' ? max(0, (float)$_POST['weight_kg']) : null,
@@ -828,7 +920,8 @@ function build_order_from_post(?string $customerName = null, ?string $customerPh
         'frame_shape' => in_array($_POST['frame_shape'] ?? '', ['ellipse_12', 'circle_24'], true) ? $_POST['frame_shape'] : '',
         'frame_high_complexity' => isset($_POST['frame_high_complexity']) ? 1 : 0,
         'client_passepartout_cutting' => isset($_POST['client_passepartout_cutting']) ? 1 : 0,
-        'manual_discount' => ($_POST['discount'] ?? '') !== '' ? (float)$_POST['discount'] : 0,
+        'manual_discount' => ($_POST['discount'] ?? '') !== '' ? max(0, min(100, (float)$_POST['discount'])) : 0,
+        'passepartout_use' => normalize_passepartout_use($_POST['passepartout_use'] ?? ''),
         'additional_profiles' => get_additional_profiles(),
         'frame_count' => max(1, (int)($_POST['frame_count'] ?? 1)),
         'customer_name' => $customerName ?? ($_POST['customer_name'] ?? ''),
@@ -850,6 +943,7 @@ function order_bind_values(array $order): array
 {
     return [
         $order['date'],
+        $order['accepted_date'],
         $order['width'],
         $order['height'],
         $order['profile'],
@@ -859,6 +953,10 @@ function order_bind_values(array $order): array
         $order['passepartout_bill_height'],
         $order['passepartout_sheet_type_id'],
         $order['passepartout_sheet_usage'],
+        $order['passepartout_use'] ?? '',
+        $order['passepartout_background'] ?? '',
+        $order['passepartout_bg_sheet_type_id'] ?? null,
+        $order['passepartout_bg_sheet_usage'] ?? null,
         $order['back'],
         $order['hanging'],
         $order['weight_kg'],
@@ -890,15 +988,16 @@ function insert_order_row(PDO $conn, array $order, int $orderNumber, int $subOrd
 {
     $stmt = $conn->prepare('
         INSERT INTO orders (
-            order_number, sub_order_number, date, width, height, profile, glass, passepartout,
+            order_number, sub_order_number, date, accepted_date, width, height, profile, glass, passepartout,
             passepartout_bill_width, passepartout_bill_height,
-            passepartout_sheet_type_id, passepartout_sheet_usage,
+            passepartout_sheet_type_id, passepartout_sheet_usage, passepartout_use,
+            passepartout_background, passepartout_bg_sheet_type_id, passepartout_bg_sheet_usage,
             back, hanging, weight_kg, customer_name, customer_phone, price, paid, collected,
             additional_profiles, frame_count, advance_payment, discount, description,
             passepartout_openings, urgent, student_discount, complex_passepartout, extra_services, transport_km,
             frame_box, frame_nonstandard, frame_shape, frame_high_complexity, client_passepartout_cutting
         ) VALUES (
-            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
         )
     ');
     $stmt->execute(array_merge([$orderNumber, $subOrderNumber], order_bind_values($order)));
@@ -908,9 +1007,10 @@ function update_order_row(PDO $conn, array $order, int $orderId): void
 {
     $stmt = $conn->prepare('
         UPDATE orders SET
-            date = ?, width = ?, height = ?, profile = ?, glass = ?,
+            date = ?, accepted_date = ?, width = ?, height = ?, profile = ?, glass = ?,
             passepartout = ?, passepartout_bill_width = ?, passepartout_bill_height = ?,
-            passepartout_sheet_type_id = ?, passepartout_sheet_usage = ?,
+            passepartout_sheet_type_id = ?, passepartout_sheet_usage = ?, passepartout_use = ?,
+            passepartout_background = ?, passepartout_bg_sheet_type_id = ?, passepartout_bg_sheet_usage = ?,
             back = ?, hanging = ?, weight_kg = ?, customer_name = ?, customer_phone = ?,
             price = ?, paid = ?, collected = ?, additional_profiles = ?,
             frame_count = ?, advance_payment = ?, discount = ?, description = ?,
@@ -928,9 +1028,13 @@ function prepare_order_persistence(PDO $conn, array $post, ?string $customerName
     $orderData = build_order_from_post($customerName, $customerPhone);
     $stockOrder = enrich_order_pricing_fields($conn, $orderData);
 
+    $pickupDate = parse_user_date_to_iso($post['date'] ?? '');
+    $acceptedDate = parse_user_date_to_iso($post['accepted_date'] ?? '') ?? date('Y-m-d');
+
     return [
         'stock_order' => $stockOrder,
-        'date' => $post['date'] ?? '',
+        'date' => $pickupDate,
+        'accepted_date' => $acceptedDate,
         'width' => $post['width'] ?? null,
         'height' => $post['height'] ?? null,
         'profile' => $post['profile'] ?? '',
@@ -940,6 +1044,10 @@ function prepare_order_persistence(PDO $conn, array $post, ?string $customerName
         'passepartout_bill_height' => $stockOrder['passepartout_bill_height'] ?? null,
         'passepartout_sheet_type_id' => $stockOrder['passepartout_sheet_type_id'] ?? null,
         'passepartout_sheet_usage' => $stockOrder['passepartout_sheet_usage'] ?? null,
+        'passepartout_use' => normalize_passepartout_use($post['passepartout_use'] ?? '') ?: ($orderData['passepartout_use'] ?? ''),
+        'passepartout_background' => $stockOrder['passepartout_background'] ?? '',
+        'passepartout_bg_sheet_type_id' => $stockOrder['passepartout_bg_sheet_type_id'] ?? null,
+        'passepartout_bg_sheet_usage' => $stockOrder['passepartout_bg_sheet_usage'] ?? null,
         'back' => $post['back'] ?? '',
         'hanging' => $post['hanging'] ?? '',
         'weight_kg' => ($post['weight_kg'] ?? '') !== '' ? max(0, (float)$post['weight_kg']) : null,
@@ -951,7 +1059,7 @@ function prepare_order_persistence(PDO $conn, array $post, ?string $customerName
         'additional_profiles' => get_additional_profiles(),
         'frame_count' => max(1, (int)($post['frame_count'] ?? 1)),
         'advance_payment' => $post['advance_payment'] ?? null,
-        'discount' => $post['discount'] ?? null,
+        'discount' => ($post['discount'] ?? '') !== '' ? max(0, min(100, (float)$post['discount'])) : null,
         'description' => $post['description'] ?? '',
         'passepartout_openings' => max(1, (int)($post['passepartout_openings'] ?? 1)),
         'urgent' => isset($post['urgent']) ? 1 : 0,
