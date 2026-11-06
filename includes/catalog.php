@@ -20,6 +20,38 @@ function profile_lookup_key(string $name): string
     return $out;
 }
 
+/**
+ * Old catalog names that were renamed (2026-11). Orders keep the name they were saved with,
+ * so lookups (price, stock) resolve the old name to the current article.
+ */
+function catalog_name_aliases(string $table): array
+{
+    return match ($table) {
+        'glasses' => [
+            'Нормално' => 'Нормално 2 мм',
+        ],
+        'hanging_options' => [
+            'Връзка до 1 m, до 7 kg + 2 закачалки' => 'Връзка до 1 м, до 7 кг, с 2 закачалки',
+            'Връзка до 9 kg' => 'Връзка до 1 м, до 9 кг, с 2 закачалки',
+            'Връзка до 11 kg' => 'Връзка до 1 м, до 11 кг, с 2 закачалки',
+            'Връзка до 1 m, до 19 kg (без закачалки)' => 'Връзка до 1 м, до 19 кг, без закачалки',
+            'Връзка до 27 kg' => 'Връзка до 1 м, до 27 кг, без закачалки',
+            'Закачалка тип крокодил' => 'Закачалка тип „крокодил“',
+            'Закачалка голяма (1 дупка)' => 'Закачалка голяма с една дупка',
+            'Закачалка с 2 дупки' => 'Закачалка голяма с две дупки',
+            'Закачалка с 3 дупки' => 'Закачалка голяма с три дупки',
+        ],
+        default => [],
+    };
+}
+
+function resolve_catalog_alias(string $table, string $name): string
+{
+    $name = trim($name);
+
+    return catalog_name_aliases($table)[$name] ?? $name;
+}
+
 function get_catalog_item_by_name(PDO $conn, string $table, string $name): ?array
 {
     $allowed = ['profiles', 'glasses', 'passepartouts', 'backs', 'hanging_options'];
@@ -31,6 +63,13 @@ function get_catalog_item_by_name(PDO $conn, string $table, string $name): ?arra
     $stmt = $conn->prepare("SELECT * FROM {$table} WHERE TRIM(name) = ?");
     $stmt->execute([$name]);
     $item = $stmt->fetch();
+    if (!$item) {
+        $aliased = resolve_catalog_alias($table, $name);
+        if ($aliased !== $name) {
+            $stmt->execute([$aliased]);
+            $item = $stmt->fetch();
+        }
+    }
     if ($item) {
         if ($table === 'passepartouts') {
             return refresh_passepartout_row_pricing($item, $conn);
@@ -219,13 +258,102 @@ function get_pricing_setting(PDO $conn, string $key, float $default = 0): float
 function get_order_automatic_pricing_hints(PDO $conn): array
 {
     return [
-        'passepartout_multi_opening' => get_pricing_setting($conn, 'passepartout_multi_opening', 1.22),
-        'passepartout_cutting_labor' => get_pricing_setting($conn, 'passepartout_cutting_labor', 1.84),
+        'passepartout_multi_opening' => get_pricing_setting($conn, 'passepartout_multi_opening', 1.50),
+        'passepartout_cutting_labor' => get_pricing_setting($conn, 'passepartout_cutting_labor', 3.00),
         'frame_labor_box' => get_pricing_setting($conn, 'frame_labor_box', 3.05),
-        'frame_surcharge_side_150' => get_pricing_setting($conn, 'frame_surcharge_side_150', 2.54),
-        'frame_surcharge_side_200' => get_pricing_setting($conn, 'frame_surcharge_side_200', 6.09),
+        'frame_surcharge_side_150' => get_pricing_setting($conn, 'frame_surcharge_side_150', 3.00),
+        'frame_surcharge_side_200' => get_pricing_setting($conn, 'frame_surcharge_side_200', 6.00),
         'urgent_surcharge_percent' => get_pricing_setting($conn, 'urgent_surcharge_percent', 50),
-        'student_discount_percent' => get_pricing_setting($conn, 'student_discount_percent', 10),
+        'urgent_next_day_percent' => get_pricing_setting($conn, 'urgent_next_day_percent', 30),
+        'frame_shape_min_price' => get_pricing_setting($conn, 'frame_shape_min_price', 10.00),
+        'frame_shape_coef_ellipse_12' => get_pricing_setting($conn, 'frame_shape_coef_ellipse_12', 3),
+        'frame_shape_coef_circle_12' => get_pricing_setting($conn, 'frame_shape_coef_circle_12', 2),
+        'frame_shape_coef_triangle' => get_pricing_setting($conn, 'frame_shape_coef_triangle', 4),
+        'subframe_labor' => get_pricing_setting($conn, 'subframe_labor', 3.00),
+        'subframe_factor_26' => get_pricing_setting($conn, 'subframe_factor_26', 1.2),
+        'subframe_factor_33' => get_pricing_setting($conn, 'subframe_factor_33', 1.4),
+        'subframe_lm_tier_1' => get_pricing_setting($conn, 'subframe_lm_tier_1', 6.90),
+        'subframe_lm_tier_2' => get_pricing_setting($conn, 'subframe_lm_tier_2', 6.90),
+        'subframe_lm_tier_3' => get_pricing_setting($conn, 'subframe_lm_tier_3', 7.80),
+        'subframe_lm_tier_4' => get_pricing_setting($conn, 'subframe_lm_tier_4', 9.00),
+    ];
+}
+
+/** Ориентировъчни ръчни отстъпки (не се прилагат автоматично). */
+function manual_discount_guidance(): array
+{
+    return [
+        ['label' => 'Поръчки от 500 до 1000 €', 'percent' => 5],
+        ['label' => 'Поръчки над 1000 €', 'percent' => 10],
+        ['label' => 'Ученици и преподаватели в художествената гимназия', 'percent' => 10],
+        ['label' => 'Студенти и преподаватели в художествената академия', 'percent' => 10],
+        ['label' => 'Художници', 'percent' => 10],
+    ];
+}
+
+function urgent_level_options(PDO $conn): array
+{
+    return [
+        0 => ['label' => 'Не', 'percent' => 0],
+        2 => [
+            'label' => 'Спешна за следващия ден (направена до 15:00 ч.)',
+            'percent' => get_pricing_setting($conn, 'urgent_next_day_percent', 30),
+        ],
+        1 => [
+            'label' => 'Спешна за същия ден (направена до 12:00 ч.)',
+            'percent' => get_pricing_setting($conn, 'urgent_surcharge_percent', 50),
+        ],
+    ];
+}
+
+function frame_measure_options(): array
+{
+    // „Нормално“ е стандартът — празна стойност, без етикет.
+    return [
+        '' => '',
+        'clear' => 'Светло (от шлиц до шлиц)',
+        'outer' => 'Външно (от външен ръб до външен ръб)',
+    ];
+}
+
+function frame_shape_options(): array
+{
+    return [
+        '' => 'Правоъгълна',
+        'ellipse_12' => 'Елипса, 12 страни',
+        'circle_12' => 'Кръг, 12 страни',
+        'triangle' => 'Триъгълник',
+    ];
+}
+
+function frame_shape_label(?string $shape): string
+{
+    if ($shape === 'circle_24') {
+        return 'Кръг 24 страни';
+    }
+    $options = frame_shape_options();
+
+    return $shape !== null && $shape !== '' ? ($options[$shape] ?? '') : '';
+}
+
+function frame_shape_coefficient(PDO $conn, string $shape): float
+{
+    return match ($shape) {
+        'ellipse_12' => get_pricing_setting($conn, 'frame_shape_coef_ellipse_12', 3),
+        'circle_12' => get_pricing_setting($conn, 'frame_shape_coef_circle_12', 2),
+        'triangle' => get_pricing_setting($conn, 'frame_shape_coef_triangle', 4),
+        'circle_24' => 4.0,
+        default => 0.0,
+    };
+}
+
+function subframe_thickness_options(): array
+{
+    return [
+        '' => 'Без подрамка',
+        '2.2' => '2.2 см (основна)',
+        '2.6' => '2.6 см (×1.2)',
+        '3.3' => '3.3 см (×1.4)',
     ];
 }
 
@@ -245,8 +373,12 @@ function pricing_setting_unit_suffix(string $key): string
     if (str_contains($key, 'percent')) {
         return '%';
     }
-    if (in_array($key, ['frame_shape_labor_ellipse', 'frame_shape_labor_circle', 'frame_shape_material_factor'], true)) {
+    if (str_starts_with($key, 'frame_shape_coef_') || str_starts_with($key, 'subframe_factor_')
+        || $key === 'frame_shape_material_factor') {
         return '×';
+    }
+    if (str_starts_with($key, 'subframe_lm_tier_')) {
+        return '€/л.м.';
     }
 
     return '€';
@@ -344,17 +476,19 @@ function build_default_price_list_rule_content(PDO $conn, string $ruleKey): stri
 {
     switch ($ruleKey) {
         case 'fir':
-            return 'Фира (материал) — 2×(ш+в)/100 + ширина×8/100 л.м. на рамка (фирата е извън скобите); дърво/пластмаса; без фира при метал';
+            return 'Фира (материал) — 2×(ш+в)/100 + ширина×8/100 л.м. на рамка (фирата е извън скобите); дърво/пластмаса; без фира при метал и при мерене „Външно“';
         case 'wide_profile':
-            return 'Широк профил (≥10 см) — страна над 2.5 м се фактурира като 3 м';
+            return 'Дълги страни — при добавка (фира) от 80 см или повече и страна над 240 см тази страна се таксува по 290 см (пластмаса) / 300 см (дърво)';
         case 'frame_labor':
             return sprintf(
-                'Труд (дърво) — %s + %s × ширина на профила (см), мин. %s €/бр.; страна от 150 см +%s €; от 200 см +%s €',
+                'Труд (дърво) — %s + %s × ширина на профила (см), мин. %s €/бр.; големи рамки: поне една страна от 150 см +%s €, и четирите +%s €; поне една от 200 см +%s €, и четирите +%s € (само най-високата)',
                 format_price_list_rule_amount(get_pricing_setting($conn, 'frame_labor_base', 2.78)),
                 format_price_list_rule_amount(get_pricing_setting($conn, 'frame_labor_per_profile_cm', 0.50)),
                 format_price_list_rule_amount(get_pricing_setting($conn, 'frame_labor_min', 3.54)),
-                format_price_list_rule_amount(get_pricing_setting($conn, 'frame_surcharge_side_150', 2.54)),
-                format_price_list_rule_amount(get_pricing_setting($conn, 'frame_surcharge_side_200', 6.09))
+                format_price_list_rule_amount(get_pricing_setting($conn, 'frame_surcharge_side_150', 3.00)),
+                format_price_list_rule_amount(2 * get_pricing_setting($conn, 'frame_surcharge_side_150', 3.00)),
+                format_price_list_rule_amount(get_pricing_setting($conn, 'frame_surcharge_side_200', 6.00)),
+                format_price_list_rule_amount(2 * get_pricing_setting($conn, 'frame_surcharge_side_200', 6.00))
             );
         case 'metal_client':
             return sprintf(
@@ -364,23 +498,17 @@ function build_default_price_list_rule_content(PDO $conn, string $ruleKey): stri
             );
         case 'passepartout':
             return sprintf(
-                'Паспарту — 6 ценови вида (виж таблицата по-горе). Рязане %s €/бр. и +%s €/доп. отвор — само при паспарту на клиент; сложно рязане +50%% (мин. %s €/бр.)',
-                format_price_list_rule_amount(get_pricing_setting($conn, 'passepartout_cutting_labor', 1.84)),
-                format_price_list_rule_amount(get_pricing_setting($conn, 'passepartout_multi_opening', 1.22)),
+                'Паспарту — 6 ценови вида (виж таблицата по-горе). Първият отвор е включен; всеки следващ +%s €/бр.; рязане на паспарту, донесено от клиента, %s €/бр.; сложно рязане +50%% (мин. %s €/бр.)',
+                format_price_list_rule_amount(get_pricing_setting($conn, 'passepartout_multi_opening', 1.50)),
+                format_price_list_rule_amount(get_pricing_setting($conn, 'passepartout_cutting_labor', 3.00)),
                 format_price_list_rule_amount(get_pricing_setting($conn, 'passepartout_complex_min', 6.10))
             );
         case 'discounts':
-            return sprintf(
-                'Отстъпки — автоматично −%s%% (над %s €) / −%s%% (над %s €); ученик −%s%%',
-                format_price_list_rule_amount(get_pricing_setting($conn, 'volume_discount_5_percent', 5)),
-                format_price_list_rule_amount(get_pricing_setting($conn, 'volume_discount_5_threshold', 255.64)),
-                format_price_list_rule_amount(get_pricing_setting($conn, 'volume_discount_10_percent', 10)),
-                format_price_list_rule_amount(get_pricing_setting($conn, 'volume_discount_10_threshold', 510.20)),
-                format_price_list_rule_amount(get_pricing_setting($conn, 'student_discount_percent', 10))
-            );
+            return 'Отстъпки — само ръчно (поле „Ръчна отстъпка“). Ориентир: 500–1000 € −5%; над 1000 € −10%; ученици/студенти и преподаватели в худ. гимназия/академия −10%; художници −10%';
         case 'urgent':
             return sprintf(
-                'Спешна — +%s%% върху сумата след отстъпките',
+                'Спешна — за следващия ден (до 15:00 ч.) +%s%%; за същия ден (до 12:00 ч.) +%s%%; сложна поръчка +50 до 100%% (договаря се); върху сумата след отстъпките',
+                format_price_list_rule_amount(get_pricing_setting($conn, 'urgent_next_day_percent', 30)),
                 format_price_list_rule_amount(get_pricing_setting($conn, 'urgent_surcharge_percent', 50))
             );
         default:
@@ -543,66 +671,318 @@ function upsert_service_catalog_row(PDO $conn, string $name, float $price, float
     }
 }
 
-function migrate_services_price_list_2026(PDO $conn): void
+/** Подразделения на „Допълнителни услуги“ — в реда от ценоразписа (2026-11). */
+function service_category_definitions(): array
 {
-    $items = [
-        ['Каширане пенокартон', 26.0, 6.0, 'sqm', 'mounting'],
-        ['Каширане сив или бирен картон (макс. 70×100)', 20.0, 5.0, 'sqm', 'mounting'],
-        ['Подлепване на пъзел', 13.0, 3.0, 'sqm', 'mounting'],
-        ['Странично изпъване на платно', 10.0, 3.0, 'sqm', 'stretching'],
-        ['Задно изпъване на платно', 16.0, 5.0, 'sqm', 'stretching'],
-        ['Изпъване/подлепване на гоблен', 16.0, 4.0, 'sqm', 'stretching'],
-        ['Рамкиране на текстил / фланелка', 20.0, 0.0, 'piece', 'assembly'],
-        ['Изправяне на преса', 8.0, 0.0, 'piece', 'general'],
-        ['Стойка до 20/30 см', 4.0, 0.0, 'piece', 'hardware'],
-        ['Стойка от 20/30 до 30/40 см', 7.0, 0.0, 'piece', 'hardware'],
-        ['Клипс', 0.5, 0.0, 'piece', 'hardware'],
-        ['Ъгъл или зак. метален профил', 0.6, 0.0, 'piece', 'hardware'],
-        ['Транспорт', 2.0, 20.0, 'km', 'general'],
-        ['Качване материали на етаж', 10.0, 0.0, 'piece', 'general'],
-        ['Монтаж на място', 10.0, 40.0, 'piece', 'general'],
-        ['Поставяне дистанционер на рамка', 3.0, 0.0, 'piece', 'frame_labor_svc'],
-        ['Монтаж подрамка (рамка тип каса)', 3.0, 0.0, 'piece', 'frame_labor_svc'],
-        ['Изработка фазер с клипсове', 5.0, 0.0, 'piece', 'frame_labor_svc'],
-        ['Дървена лайсна дистанционер', 4.27, 0.0, 'piece', 'frame_labor_svc'],
+    return [
+        'mounting' => 'Каширане',
+        'stretching' => 'Изпъване на платно и гоблен',
+        'subframes' => 'Подрамки',
+        'small' => 'Дребни (фиксирани цени)',
+        'frame_making' => 'Изработване на рамки',
+        'assembly' => 'Монтаж или демонтаж на произведение или стъкло',
+        'boxes' => 'Кутии от велпапе',
+        'other' => 'Други',
     ];
+}
 
-    foreach ($items as [$name, $price, $minPrice, $unit, $category]) {
-        upsert_service_catalog_row($conn, $name, $price, $minPrice, $unit, $category);
-    }
+/**
+ * Канонични услуги от ценоразписа 2026-11: [име, цена, минимум, единица, категория, ред, бележка].
+ * Единица „manual“ = клетка за договорена/твърда цена, въведена в поръчката.
+ */
+function get_service_catalog_2026(): array
+{
+    return [
+        ['Каширане на пенокартон', 26.0, 6.0, 'sqm', 'mounting', 10, null],
+        ['Каширане на сив или бирен картон', 20.0, 5.0, 'sqm', 'mounting', 20, 'Максимален размер 70/100 см'],
+        ['Подлепване на пъзел', 13.0, 3.0, 'sqm', 'mounting', 30, null],
 
-    $legacyRenames = [
-        'Каширане сив картон' => 'Каширане сив или бирен картон (макс. 70×100)',
+        ['Странично изпъване на платно', 10.0, 3.0, 'sqm', 'stretching', 10, null],
+        ['Задно изпъване на платно', 16.0, 5.0, 'sqm', 'stretching', 20, null],
+        ['Изпъване/подлепване на гоблен', 16.0, 4.0, 'sqm', 'stretching', 30, null],
+        ['Опъване платно на подрамка (винтове)', 3.05, 0.0, 'piece', 'stretching', 40, null],
+
+        ['Рамкиране на текстил/фланелка', 20.0, 0.0, 'piece', 'small', 10, null],
+        ['Рамкиране на други предмети', 0.0, 0.0, 'manual', 'small', 20, 'Цена, определена в магазина'],
+        ['Изправяне на вакуум преса', 8.0, 0.0, 'piece', 'small', 30, null],
+        ['Стойка до 20/30 см', 4.0, 0.0, 'piece', 'small', 40, null],
+        ['Стойка от 20/30 до 30/40 см', 7.0, 0.0, 'piece', 'small', 50, null],
+        ['Клипс', 0.5, 0.0, 'piece', 'small', 60, null],
+        ['Ъгъл или зак. метален профил', 0.6, 0.0, 'piece', 'small', 70, null],
+        ['Транспорт', 0.0, 0.0, 'manual', 'small', 80, 'Ориентир 2.00 €/км или минимум 20 € на доставка'],
+        ['Качване на материали на етаж', 0.0, 0.0, 'manual', 'small', 90, 'Ориентир 10 € на етаж за брой'],
+        ['Монтаж на място', 10.0, 40.0, 'piece', 'small', 100, 'Минимум 40 € на поръчка'],
+
+        ['Поставяне на дистанционер на рамка', 3.0, 0.0, 'piece', 'frame_making', 10, '+ цената на дистанционера от склада'],
+        ['Монтаж на подрамка на рамка тип „каса“ с винтове', 3.0, 0.0, 'piece', 'frame_making', 20, null],
+        ['Изработка на фазер с клипсове', 5.0, 0.0, 'piece', 'frame_making', 50, null],
+
+        ['Поставяне в готова рамка до 0.5 кв.м', 4.0, 0.0, 'piece', 'assembly', 10, null],
+        ['Поставяне в готова рамка от 0.5 до 0.8 кв.м', 8.0, 0.0, 'piece', 'assembly', 20, null],
+        ['Поставяне в готова рамка от 0.8 до 1.2 кв.м', 10.0, 0.0, 'piece', 'assembly', 30, null],
+        ['Поставяне в готова рамка над 1.2 кв.м', 0.0, 0.0, 'manual', 'assembly', 40, 'Договорена цена'],
+        ['Демонтаж на рамка на клиент', 5.0, 0.0, 'piece', 'assembly', 50, null],
+
+        ['Кутия от велпапе 20/50/70 см', 7.0, 0.0, 'piece', 'boxes', 10, null],
+        ['Кутия от велпапе над 20/50/70 до 20/50/100 см', 10.0, 0.0, 'piece', 'boxes', 20, null],
+        ['Кутия от велпапе над 20/50/100 до 30/100/150 см', 18.0, 0.0, 'piece', 'boxes', 30, null],
+        ['Кутия от велпапе — по-голям размер или допълнителни изисквания', 0.0, 0.0, 'manual', 'boxes', 40, 'Договорена цена'],
+    ];
+}
+
+/** Стари имена → имена от ценоразписа 2026-11. */
+function get_service_legacy_renames(): array
+{
+    return [
+        'Каширане пенокартон' => 'Каширане на пенокартон',
+        'Каширане сив или бирен картон (макс. 70×100)' => 'Каширане на сив или бирен картон',
+        'Каширане сив картон' => 'Каширане на сив или бирен картон',
         'Опъване платно (странично)' => 'Странично изпъване на платно',
         'Опъване платно (задно опъване)' => 'Задно изпъване на платно',
-        'Рамкиране текстил (фланелка и др.)' => 'Рамкиране на текстил / фланелка',
+        'Опъване платно (приковаване)' => 'Задно изпъване на платно',
+        'Рамкиране текстил (фланелка и др.)' => 'Рамкиране на текстил/фланелка',
+        'Рамкиране на текстил / фланелка' => 'Рамкиране на текстил/фланелка',
         'Подлепване пъзел' => 'Подлепване на пъзел',
         'Изпъване гоблен с подлепяне' => 'Изпъване/подлепване на гоблен',
         'Стойка (до 20/30 см)' => 'Стойка до 20/30 см',
         'Стойка (до 30/40 см)' => 'Стойка от 20/30 до 30/40 см',
-        'Качване материали (етаж)' => 'Качване материали на етаж',
+        'Качване материали (етаж)' => 'Качване на материали на етаж',
+        'Качване материали на етаж' => 'Качване на материали на етаж',
         'Ъгъл/закачалка метален профил' => 'Ъгъл или зак. метален профил',
-        'Изработка клипсове' => 'Изработка фазер с клипсове',
+        'Изработка клипсове' => 'Изработка на фазер с клипсове',
+        'Изработка фазер с клипсове' => 'Изработка на фазер с клипсове',
+        'Изправяне на преса' => 'Изправяне на вакуум преса',
+        'Поставяне дистанционер на рамка' => 'Поставяне на дистанционер на рамка',
+        'Монтаж подрамка (рамка тип каса)' => 'Монтаж на подрамка на рамка тип „каса“ с винтове',
+        'Поставяне в готова рамка (до 0.5 кв.м.)' => 'Поставяне в готова рамка до 0.5 кв.м',
+        'Поставяне в готова рамка (0.5–0.8 кв.м.)' => 'Поставяне в готова рамка от 0.5 до 0.8 кв.м',
+        'Поставяне в готова рамка (0.8–1.2 кв.м.)' => 'Поставяне в готова рамка от 0.8 до 1.2 кв.м',
+        'Демонтаж от рамка на клиент' => 'Демонтаж на рамка на клиент',
     ];
+}
 
-    $checkNew = $conn->prepare('SELECT COUNT(*) FROM services WHERE name = ?');
-    $checkOld = $conn->prepare('SELECT COUNT(*) FROM services WHERE name = ?');
-    $deleteOld = $conn->prepare('DELETE FROM services WHERE name = ?');
+/**
+ * Еднократно: преименува/подрежда услугите по ценоразписа 2026-11 и задава новите цени.
+ * Не се изпълнява при всяка заявка, за да не презаписва цени, редактирани в „Услуги“.
+ */
+function migrate_services_price_list_2026(PDO $conn): void
+{
+    if (!table_has_column($conn, 'services', 'sort_order') || schema_migration_applied($conn, 'services_catalog_2026_11')) {
+        return;
+    }
 
-    foreach ($legacyRenames as $oldName => $newName) {
-        $checkOld->execute([$oldName]);
-        $checkNew->execute([$newName]);
-        $hasOld = (int)$checkOld->fetchColumn() > 0;
-        $hasNew = (int)$checkNew->fetchColumn() > 0;
+    $find = $conn->prepare('SELECT id FROM services WHERE name = ? LIMIT 1');
+    $findId = static function (string $name) use ($find): ?int {
+        $find->execute([$name]);
+        $id = $find->fetchColumn();
 
-        if ($hasOld && !$hasNew) {
-            $conn->prepare('UPDATE services SET name = ? WHERE name = ?')->execute([$newName, $oldName]);
+        return $id ? (int)$id : null;
+    };
+
+    // Rename legacy names; a duplicate is deactivated (not deleted) so old orders keep their label.
+    foreach (get_service_legacy_renames() as $oldName => $newName) {
+        $oldId = $findId($oldName);
+        if ($oldId === null) {
             continue;
         }
-        if ($hasOld && $hasNew) {
-            $deleteOld->execute([$oldName]);
+        if ($findId($newName) === null) {
+            $conn->prepare('UPDATE services SET name = ? WHERE id = ?')->execute([$newName, $oldId]);
+        } else {
+            $conn->prepare('UPDATE services SET is_active = 0, category = ? WHERE id = ?')->execute(['other', $oldId]);
         }
     }
+
+    // Old categories → new subsections (for rows outside the canonical list).
+    $categoryMap = [
+        'frame_labor_svc' => 'frame_making',
+        'general' => 'small',
+        'hardware' => 'small',
+        'glass_labor' => 'other',
+    ];
+    foreach ($categoryMap as $old => $new) {
+        $conn->prepare('UPDATE services SET category = ? WHERE category = ?')->execute([$new, $old]);
+    }
+
+    $update = $conn->prepare('
+        UPDATE services SET price = ?, min_price = ?, pricing_unit = ?, category = ?, sort_order = ?, note = ?, is_active = 1
+        WHERE id = ?
+    ');
+    $insert = $conn->prepare('
+        INSERT INTO services (name, price, min_price, pricing_unit, category, sort_order, note, is_active)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+    ');
+    foreach (get_service_catalog_2026() as [$name, $price, $minPrice, $unit, $category, $sort, $note]) {
+        $id = $findId($name);
+        if ($id !== null) {
+            $update->execute([$price, $minPrice, $unit, $category, $sort, $note, $id]);
+        } else {
+            $insert->execute([$name, $price, $minPrice, $unit, $category, $sort, $note]);
+        }
+    }
+
+    // „Опъване платно на подрамка (странично)“ дублира „Странично изпъване на платно“ — скрива се.
+    $conn->prepare('UPDATE services SET is_active = 0, category = ? WHERE name = ?')
+        ->execute(['other', 'Опъване платно на подрамка (странично)']);
+
+    // Услуги извън новия лист остават в „Други“.
+    $legacyOther = [
+        'Смяна/поставяне стъкло (до 0.5 кв.м.)' => 10,
+        'Смяна/поставяне стъкло (0.5–0.8 кв.м.)' => 20,
+        'Смяна/поставяне стъкло (над 0.8 кв.м.)' => 30,
+        'Уплътнител метална рамка' => 40,
+        'Дървена лайсна дистанционер' => 50,
+    ];
+    foreach ($legacyOther as $name => $sort) {
+        $conn->prepare('UPDATE services SET category = ?, sort_order = ?, is_active = 1 WHERE name = ?')
+            ->execute(['other', $sort, $name]);
+    }
+
+    mark_schema_migration_applied($conn, 'services_catalog_2026_11');
+}
+
+/** Пакети „Връзка“ и закачалки по ценоразписа 2026-11 (еднократно). */
+function migrate_hanging_options_2026(PDO $conn): void
+{
+    if (!table_has_column($conn, 'hanging_options', 'sort_order') || schema_migration_applied($conn, 'hanging_catalog_2026_11')) {
+        return;
+    }
+
+    $find = $conn->prepare('SELECT id FROM hanging_options WHERE name = ? LIMIT 1');
+    $exists = static function (string $name) use ($find): bool {
+        $find->execute([$name]);
+
+        return (bool)$find->fetchColumn();
+    };
+
+    foreach (catalog_name_aliases('hanging_options') as $oldName => $newName) {
+        if ($exists($oldName) && !$exists($newName)) {
+            $conn->prepare('UPDATE hanging_options SET name = ? WHERE name = ?')->execute([$newName, $oldName]);
+        }
+    }
+
+    $items = [
+        ['Връзка до 1 м, до 7 кг, с 2 закачалки', 1.50, 10],
+        ['Връзка до 1 м, до 9 кг, с 2 закачалки', 2.00, 20],
+        ['Връзка до 1 м, до 11 кг, с 2 закачалки', 2.50, 30],
+        ['Връзка до 1 м, до 19 кг, без закачалки', 3.00, 40],
+        ['Връзка до 1 м, до 27 кг, без закачалки', 4.00, 50],
+        ['Закачалка малка', 0.30, 110],
+        ['Закачалка тип „крокодил“', 0.60, 120],
+        ['Закачалка голяма с една дупка', 1.00, 130],
+        ['Закачалка голяма с две дупки', 2.00, 140],
+        ['Закачалка голяма с три дупки', 3.00, 150],
+    ];
+    foreach ($items as [$name, $price, $sort]) {
+        if ($exists($name)) {
+            $conn->prepare('UPDATE hanging_options SET price = ?, min_price = 0, pricing_unit = ?, sort_order = ? WHERE name = ?')
+                ->execute([$price, 'piece', $sort, $name]);
+        } else {
+            $conn->prepare('INSERT INTO hanging_options (name, price, min_price, pricing_unit, stock, sort_order) VALUES (?, ?, 0, ?, 0, ?)')
+                ->execute([$name, $price, 'piece', $sort]);
+        }
+    }
+
+    mark_schema_migration_applied($conn, 'hanging_catalog_2026_11');
+}
+
+/** Пакети за падащото меню „Окачване“ (по големина) и закачалки (по цена). */
+function split_hanging_options_for_form(array $hangingOptions): array
+{
+    $packages = [];
+    $hangers = [];
+    foreach ($hangingOptions as $option) {
+        $name = trim($option['name'] ?? '');
+        if ($name === '' || in_array($name, ['Връзка', 'Две закачалки', 'Закачалка'], true)) {
+            continue;
+        }
+        if (str_starts_with($name, 'Закачалка')) {
+            $hangers[] = $option;
+        } else {
+            $packages[] = $option;
+        }
+    }
+    $bySort = static fn (array $a, array $b): int =>
+        [(int)($a['sort_order'] ?? 100), (float)($a['price'] ?? 0), $a['name']]
+        <=> [(int)($b['sort_order'] ?? 100), (float)($b['price'] ?? 0), $b['name']];
+    usort($packages, $bySort);
+    usort($hangers, $bySort);
+
+    return ['packages' => $packages, 'hangers' => $hangers];
+}
+
+/** „Закачалка голяма с една дупка“ → „Голяма с една дупка“. */
+function hanger_display_label(string $name): string
+{
+    $label = trim(preg_replace('/^Закачалка\s*/u', '', $name) ?? $name);
+    if ($label === '') {
+        return $name;
+    }
+
+    return mb_strtoupper(mb_substr($label, 0, 1, 'UTF-8'), 'UTF-8') . mb_substr($label, 1, null, 'UTF-8');
+}
+
+function hanging_package_requires_hangers(string $name): bool
+{
+    return str_contains(mb_strtolower($name, 'UTF-8'), 'без закачалки');
+}
+
+function service_pricing_unit_label(string $unit): string
+{
+    return match ($unit) {
+        'sqm' => '€/кв.м',
+        'lm' => '€/л.м.',
+        'km' => '€/км',
+        'manual' => 'договорена цена',
+        default => '€/бр.',
+    };
+}
+
+function service_area_tier_rank(string $name): int
+{
+    if (preg_match('/до\s*0[,.]5\s*кв/u', $name)) {
+        return 1;
+    }
+    if (preg_match('/0[,.]5\s*(?:[–\-]|до)\s*0[,.]8/u', $name)) {
+        return 2;
+    }
+    if (preg_match('/(0[,.]8\s*(?:[–\-]|до)\s*1[,.]2|над\s*0[,.]8)/u', $name)) {
+        return 3;
+    }
+    if (preg_match('/над\s*1[,.]2/u', $name)) {
+        return 4;
+    }
+
+    return 99;
+}
+
+function sort_services_for_display(array $services): array
+{
+    $categoryOrder = array_flip(array_keys(service_category_definitions()));
+    usort($services, static function (array $a, array $b) use ($categoryOrder): int {
+        $catA = $categoryOrder[$a['category'] ?? 'other'] ?? 99;
+        $catB = $categoryOrder[$b['category'] ?? 'other'] ?? 99;
+
+        return [$catA, (int)($a['sort_order'] ?? 100), $a['name'] ?? '']
+            <=> [$catB, (int)($b['sort_order'] ?? 100), $b['name'] ?? ''];
+    });
+
+    return $services;
+}
+
+function get_all_services(PDO $conn, bool $activeOnly = false): array
+{
+    $sql = 'SELECT * FROM services';
+    if ($activeOnly && table_has_column($conn, 'services', 'is_active')) {
+        $sql .= ' WHERE is_active = 1';
+    }
+    $rows = $conn->query($sql)->fetchAll();
+
+    return sort_services_for_display($rows);
+}
+
+function service_is_spacer(array $service): bool
+{
+    return str_contains($service['name'] ?? '', 'дистанционер на рамка');
 }
 
 function upsert_hanging_option(PDO $conn, string $name, float $price, float $minPrice, string $unit): void
@@ -614,86 +994,6 @@ function upsert_hanging_option(PDO $conn, string $name, float $price, float $min
         : 'INSERT INTO hanging_options (name, price, min_price, pricing_unit, stock) VALUES (?, ?, ?, ?, 0)
            ON CONFLICT(name) DO UPDATE SET price = excluded.price, min_price = excluded.min_price, pricing_unit = excluded.pricing_unit';
     $conn->prepare($sql)->execute([$name, $price, $minPrice, $unit]);
-}
-
-function migrate_hanging_options_2026(PDO $conn): void
-{
-    $packages = [
-        ['Връзка до 1 m, до 7 kg + 2 закачалки', 1.50, 0, 'piece'],
-        ['Връзка до 9 kg', 2.00, 0, 'piece'],
-        ['Връзка до 11 kg', 2.50, 0, 'piece'],
-        ['Връзка до 1 m, до 19 kg (без закачалки)', 3.00, 0, 'piece'],
-        ['Връзка до 27 kg', 4.00, 0, 'piece'],
-    ];
-    foreach ($packages as [$name, $price, $min, $unit]) {
-        upsert_hanging_option($conn, $name, $price, $min, $unit);
-    }
-
-    $hangers = [
-        ['Закачалка малка', 0.30, 0, 'piece'],
-        ['Закачалка тип крокодил', 0.60, 0, 'piece'],
-        ['Закачалка голяма (1 дупка)', 1.00, 0, 'piece'],
-        ['Закачалка с 2 дупки', 2.00, 0, 'piece'],
-        ['Закачалка с 3 дупки', 3.00, 0, 'piece'],
-    ];
-    foreach ($hangers as [$name, $price, $min, $unit]) {
-        upsert_hanging_option($conn, $name, $price, $min, $unit);
-    }
-}
-
-function service_pricing_unit_label(string $unit): string
-{
-    return match ($unit) {
-        'sqm' => '€/кв.м.',
-        'lm' => '€/л.м.',
-        'km' => '€/км',
-        default => '€/бр.',
-    };
-}
-
-function service_area_tier_rank(string $name): int
-{
-    if (preg_match('/до\s*0[,.]5/u', $name)) {
-        return 1;
-    }
-    if (preg_match('/0[,.]5\s*[–\-]\s*0[,.]8/u', $name)) {
-        return 2;
-    }
-    if (preg_match('/(над\s*0[,.]8|0[,.]8\s*[–\-]\s*1[,.]2)/u', $name)) {
-        return 3;
-    }
-
-    return 99;
-}
-
-function sort_services_for_display(array $services): array
-{
-    usort($services, static function (array $a, array $b): int {
-        $catA = $a['category'] ?? '';
-        $catB = $b['category'] ?? '';
-        if ($catA !== $catB) {
-            return strcmp($catA, $catB);
-        }
-
-        if (in_array($catA, ['assembly', 'glass_labor'], true)) {
-            $rankA = service_area_tier_rank($a['name'] ?? '');
-            $rankB = service_area_tier_rank($b['name'] ?? '');
-            if ($rankA !== $rankB) {
-                return $rankA <=> $rankB;
-            }
-        }
-
-        return strcmp($a['name'] ?? '', $b['name'] ?? '');
-    });
-
-    return $services;
-}
-
-function get_all_services(PDO $conn): array
-{
-    $rows = $conn->query('SELECT * FROM services ORDER BY category, name')->fetchAll();
-
-    return sort_services_for_display($rows);
 }
 
 function migrate_service_display_names(PDO $conn): void
@@ -741,53 +1041,35 @@ function parse_extra_service_ids($raw): array
 
 function seed_services_from_price_list(PDO $conn): void
 {
-    $items = [
-        ['Смяна/поставяне стъкло (до 0.5 кв.м.)', 3.06, 0, 'piece', 'glass_labor'],
-        ['Смяна/поставяне стъкло (0.5–0.8 кв.м.)', 3.67, 0, 'piece', 'glass_labor'],
-        ['Смяна/поставяне стъкло (над 0.8 кв.м.)', 9.18, 0, 'piece', 'glass_labor'],
-        ['Поставяне в готова рамка (до 0.5 кв.м.)', 3.06, 0, 'piece', 'assembly'],
-        ['Поставяне в готова рамка (0.5–0.8 кв.м.)', 4.90, 0, 'piece', 'assembly'],
-        ['Поставяне в готова рамка (0.8–1.2 кв.м.)', 9.18, 0, 'piece', 'assembly'],
-        ['Демонтаж от рамка на клиент', 1.85, 0, 'piece', 'assembly'],
-        ['Опъване платно (странично)', 9.16, 3.05, 'sqm', 'stretching'],
-        ['Опъване платно (задно опъване)', 15.26, 6.10, 'sqm', 'stretching'],
-        ['Каширане сив картон', 18.32, 4.88, 'sqm', 'mounting'],
-        ['Каширане пенокартон', 25.64, 4.07, 'sqm', 'mounting'],
-        ['Изправяне на преса', 7.33, 0, 'piece', 'general'],
-        ['Монтаж на място', 9.18, 36.73, 'piece', 'general'],
-        ['Транспорт', 1.83, 30.67, 'km', 'general'],
-        ['Клипс', 0.22, 0, 'piece', 'hardware'],
-        ['Изработка клипсове', 3.54, 0, 'piece', 'frame_labor_svc'],
-        ['Дървена лайсна дистанционер', 4.27, 0, 'piece', 'frame_labor_svc'],
-        ['Опъване платно на подрамка (странично)', 3.05, 0, 'piece', 'stretching'],
-        ['Рамкиране текстил (фланелка и др.)', 18.32, 0, 'piece', 'assembly'],
-        ['Подлепване пъзел', 12.22, 3.05, 'sqm', 'mounting'],
-        ['Изпъване гоблен с подлепяне', 15.26, 3.05, 'sqm', 'stretching'],
-        ['Уплътнител метална рамка', 0.18, 0, 'piece', 'hardware'],
-        ['Ъгъл/закачалка метален профил', 0.61, 0, 'piece', 'hardware'],
-    ];
+    // Seeds only an empty table; names/prices are aligned by migrate_services_price_list_2026().
+    if ((int)$conn->query('SELECT COUNT(*) FROM services')->fetchColumn() > 0) {
+        return;
+    }
 
-    foreach ($items as [$name, $price, $minPrice, $unit, $category]) {
-        $check = $conn->prepare('SELECT COUNT(*) FROM services WHERE name = ?');
-        $check->execute([$name]);
-        if ((int)$check->fetchColumn() > 0) {
-            continue;
-        }
-        $conn->prepare('INSERT INTO services (name, price, min_price, pricing_unit, category) VALUES (?, ?, ?, ?, ?)')
-            ->execute([$name, $price, $minPrice, $unit, $category]);
+    $legacyOther = [
+        ['Смяна/поставяне стъкло (до 0.5 кв.м.)', 3.06, 0, 'piece', 'other'],
+        ['Смяна/поставяне стъкло (0.5–0.8 кв.м.)', 3.67, 0, 'piece', 'other'],
+        ['Смяна/поставяне стъкло (над 0.8 кв.м.)', 9.18, 0, 'piece', 'other'],
+        ['Уплътнител метална рамка', 0.18, 0, 'piece', 'other'],
+        ['Дървена лайсна дистанционер', 4.27, 0, 'piece', 'other'],
+    ];
+    $insert = $conn->prepare('INSERT INTO services (name, price, min_price, pricing_unit, category) VALUES (?, ?, ?, ?, ?)');
+    foreach ($legacyOther as $row) {
+        $insert->execute($row);
     }
 }
 
 function sync_catalog_min_prices(PDO $conn): void
 {
     $glassMins = [
-        'Нормално' => 1.02,
+        'Нормално 2 мм' => 1.02,
         'Антирефлексно' => 1.22,
         'Консервационно' => 3.98,
         'Музейно' => 10.18,
         'Огледало' => 3.05,
         'Плексиглас 2 mm' => 1.84,
         'Плексиглас 3 mm' => 1.84,
+        'Антирефлексен плексиглас' => 1.84,
     ];
     $stmt = $conn->prepare('UPDATE glasses SET min_price = ? WHERE name = ? AND (min_price IS NULL OR min_price = 0)');
     foreach ($glassMins as $name => $minPrice) {
@@ -813,24 +1095,29 @@ function seed_pricing_settings(PDO $conn): void
         ['frame_labor_base', 2.78, 'Базова цена изработка рамка (€/бр.)', 'frame_labor'],
         ['frame_labor_per_profile_cm', 0.50, 'Допълнение за всеки см ширина на профила (€/бр.)', 'frame_labor'],
         ['frame_labor_min', 3.54, 'Минимална цена изработка рамка (€/бр.)', 'frame_labor'],
-        ['frame_surcharge_side_150', 2.54, 'Доплащане при най-дълга страна ≥150 см (€/бр., веднъж)', 'frame_labor'],
-        ['frame_surcharge_side_200', 6.09, 'Доплащане при най-дълга страна ≥200 см (€/бр., веднъж)', 'frame_labor'],
+        ['frame_surcharge_side_150', 3.00, 'Голяма рамка: поне една страна от 150 см (€/бр.; и четирите — ×2)', 'frame_labor'],
+        ['frame_surcharge_side_200', 6.00, 'Голяма рамка: поне една страна от 200 см (€/бр.; и четирите — ×2)', 'frame_labor'],
         ['frame_labor_metal', 5.07, 'Изработка метална рамка (€/бр.)', 'frame_labor'],
         ['frame_labor_client_material', 15.27, 'Изработка с профил на клиент (€/бр.)', 'frame_labor'],
         ['frame_labor_box', 3.05, 'Рамка тип кутия (€/бр.)', 'frame_labor'],
-        ['frame_nonstandard_min', 8.63, 'Минимум нестандартна форма (€/бр.)', 'frame_labor'],
-        ['frame_shape_material_factor', 1.25, 'Коефициент профил елипса/кръг (материал)', 'frame_labor'],
-        ['frame_shape_labor_ellipse', 3, 'Коефициент труд елипса/кръг 12 страни', 'frame_labor'],
-        ['frame_shape_labor_circle', 4, 'Коефициент труд кръг 24 страни', 'frame_labor'],
-        ['passepartout_cutting_labor', 1.84, 'Рязане паспарту (€/бр.)', 'passepartout_labor'],
-        ['passepartout_multi_opening', 1.22, 'Допълнителен отвор паспарту (€/бр.)', 'passepartout_labor'],
+        ['frame_nonstandard_min', 8.63, 'Минимум нестандартна изработка (€/бр.)', 'frame_labor'],
+        ['frame_shape_material_factor', 1.25, 'Нестандартна фигура: коефициент на метража', 'frame_labor'],
+        ['frame_shape_coef_ellipse_12', 3, 'Нестандартна фигура: елипса, 12 страни (× цена профил)', 'frame_labor'],
+        ['frame_shape_coef_circle_12', 2, 'Нестандартна фигура: кръг, 12 страни (× цена профил)', 'frame_labor'],
+        ['frame_shape_coef_triangle', 4, 'Нестандартна фигура: триъгълник (× цена профил)', 'frame_labor'],
+        ['frame_shape_min_price', 10.00, 'Нестандартна фигура: минимум (€/бр.)', 'frame_labor'],
+        ['passepartout_cutting_labor', 3.00, 'Рязане на паспарту, донесено от клиента (€/бр.)', 'passepartout_labor'],
+        ['passepartout_multi_opening', 1.50, 'Всеки следващ отвор на паспарту (€/бр.)', 'passepartout_labor'],
         ['passepartout_complex_min', 6.10, 'Минимум сложно рязане паспарту (€/бр.)', 'passepartout_labor'],
-        ['volume_discount_5_threshold', 255.64, 'Праг 5% отстъпка (€)', 'discounts'],
-        ['volume_discount_10_threshold', 510.20, 'Праг 10% отстъпка (€)', 'discounts'],
-        ['volume_discount_5_percent', 5, 'Отстъпка при еднократна поръчка 500–1000 лв (%)', 'discounts'],
-        ['volume_discount_10_percent', 10, 'Отстъпка при поръчка над 1000 лв (%)', 'discounts'],
-        ['student_discount_percent', 10, 'Отстъпка ученик/студент (%)', 'discounts'],
-        ['urgent_surcharge_percent', 50, 'Доплащане спешна поръчка (%)', 'discounts'],
+        ['subframe_lm_tier_1', 6.90, 'Подрамка до 30/40 см (€/л.м.), без труд', 'subframes'],
+        ['subframe_lm_tier_2', 6.90, 'Подрамка от 30/40 до 50/70 см (€/л.м.)', 'subframes'],
+        ['subframe_lm_tier_3', 7.80, 'Подрамка от 50/70 до 70/100 см (€/л.м.)', 'subframes'],
+        ['subframe_lm_tier_4', 9.00, 'Подрамка от 100/70 до 100/150 см (€/л.м.)', 'subframes'],
+        ['subframe_labor', 3.00, 'Труд подрамка над 30/40 см (€/бр.)', 'subframes'],
+        ['subframe_factor_26', 1.2, 'Подрамка 2.6 см: коефициент за материал и труд', 'subframes'],
+        ['subframe_factor_33', 1.4, 'Подрамка 3.3 см: коефициент за материал и труд', 'subframes'],
+        ['urgent_next_day_percent', 30, 'Спешна за следващия ден, направена до 15:00 ч. (%)', 'discounts'],
+        ['urgent_surcharge_percent', 50, 'Спешна за същия ден, направена до 12:00 ч. (%)', 'discounts'],
     ];
 
     $isMysql = $conn->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql';
@@ -840,9 +1127,9 @@ function seed_pricing_settings(PDO $conn): void
 
     $insert = $conn->prepare($sql);
     $updateLabel = $conn->prepare('UPDATE pricing_settings SET label = ?, category = ? WHERE setting_key = ?');
+    $check = $conn->prepare('SELECT COUNT(*) FROM pricing_settings WHERE setting_key = ?');
 
     foreach ($settings as [$key, $value, $label, $category]) {
-        $check = $conn->prepare('SELECT COUNT(*) FROM pricing_settings WHERE setting_key = ?');
         $check->execute([$key]);
         if ((int)$check->fetchColumn() === 0) {
             $insert->execute([$key, $value, $label, $category]);
@@ -850,6 +1137,73 @@ function seed_pricing_settings(PDO $conn): void
             $updateLabel->execute([$label, $category, $key]);
         }
     }
+}
+
+/**
+ * migration_009_order_form_2026 — еднократни промени по ценоразписа (ноември 2026).
+ * Не пипа записаните поръчки и техните цени.
+ */
+function migrate_order_form_2026(PDO $conn): void
+{
+    if (schema_migration_applied($conn, 'order_form_2026_11')) {
+        return;
+    }
+
+    $setValue = $conn->prepare('UPDATE pricing_settings SET setting_value = ? WHERE setting_key = ?');
+    foreach ([
+        'frame_surcharge_side_150' => 3.00,
+        'frame_surcharge_side_200' => 6.00,
+        'passepartout_multi_opening' => 1.50,
+        'passepartout_cutting_labor' => 3.00,
+    ] as $key => $value) {
+        $setValue->execute([$value, $key]);
+    }
+
+    // Автоматичните отстъпки (обемна, ученик) и старите коефициенти за труд при фигура отпадат.
+    $obsolete = [
+        'volume_discount_5_threshold',
+        'volume_discount_10_threshold',
+        'volume_discount_5_percent',
+        'volume_discount_10_percent',
+        'student_discount_percent',
+        'frame_shape_labor_ellipse',
+        'frame_shape_labor_circle',
+    ];
+    $delete = $conn->prepare('DELETE FROM pricing_settings WHERE setting_key = ?');
+    foreach ($obsolete as $key) {
+        $delete->execute([$key]);
+    }
+
+    // Текстовете на правилата се обновяват по новия ценоразпис.
+    seed_price_list_rules($conn);
+    $ruleUpdate = $conn->prepare('UPDATE price_list_rules SET content = ? WHERE rule_key = ?');
+    foreach (['fir', 'wide_profile', 'frame_labor', 'passepartout', 'discounts', 'urgent'] as $ruleKey) {
+        $ruleUpdate->execute([build_default_price_list_rule_content($conn, $ruleKey), $ruleKey]);
+    }
+
+    // Подредба: стъкло — „Нормално 2 мм“ първо; гръб — велпапе, сив картон, пенокартон, бирен картон, фазер.
+    $glassOrder = [
+        'Нормално 2 мм' => 10,
+        'Антирефлексно' => 20,
+        'Консервационно' => 30,
+        'Музейно' => 40,
+        'Огледало' => 50,
+        'Плексиглас 2 mm' => 60,
+        'Плексиглас 3 mm' => 70,
+        'Антирефлексен плексиглас' => 80,
+    ];
+    $stmt = $conn->prepare('UPDATE glasses SET sort_order = ? WHERE name = ?');
+    foreach ($glassOrder as $name => $sort) {
+        $stmt->execute([$sort, $name]);
+    }
+
+    $backOrder = ['Велпапе' => 10, 'Сив картон' => 20, 'Пенокартон' => 30, 'Бирен картон' => 40, 'Фазер' => 50];
+    $stmt = $conn->prepare('UPDATE backs SET sort_order = ? WHERE name = ?');
+    foreach ($backOrder as $name => $sort) {
+        $stmt->execute([$sort, $name]);
+    }
+
+    mark_schema_migration_applied($conn, 'order_form_2026_11');
 }
 
 function migrate_plexiglass_glass_names(PDO $conn): void
@@ -870,12 +1224,36 @@ function migrate_plexiglass_glass_names(PDO $conn): void
     }
 }
 
+function migrate_normal_glass_name(PDO $conn): void
+{
+    $check = $conn->prepare('SELECT COUNT(*) FROM glasses WHERE name = ?');
+    $check->execute(['Нормално']);
+    $hasOld = (int)$check->fetchColumn() > 0;
+    $check->execute(['Нормално 2 мм']);
+    $hasNew = (int)$check->fetchColumn() > 0;
+
+    // Старите поръчки пазят „Нормално“ — намират артикула чрез catalog_name_aliases().
+    if ($hasOld && !$hasNew) {
+        $conn->prepare('UPDATE glasses SET name = ? WHERE name = ?')->execute(['Нормално 2 мм', 'Нормално']);
+    }
+
+    // Връща временното име „Анти плекс“ (то е само съкращение в таблицата с поръчки).
+    $check->execute(['Анти плекс']);
+    $hasShort = (int)$check->fetchColumn() > 0;
+    $check->execute(['Антирефлексен плексиглас']);
+    if ($hasShort && (int)$check->fetchColumn() === 0) {
+        $conn->prepare('UPDATE glasses SET name = ? WHERE name = ?')->execute(['Антирефлексен плексиглас', 'Анти плекс']);
+        $conn->prepare('UPDATE orders SET glass = ? WHERE glass = ?')->execute(['Антирефлексен плексиглас', 'Анти плекс']);
+    }
+}
+
 function seed_glasses_from_price_list(PDO $conn): void
 {
     migrate_plexiglass_glass_names($conn);
+    migrate_normal_glass_name($conn);
 
     $items = [
-        ['Нормално', 15.95, 1.02],
+        ['Нормално 2 мм', 15.95, 1.02],
         ['Антирефлексно', 22.70, 1.22],
         ['Консервационно', 63.20, 3.98],
         ['Музейно', 161.32, 10.18],
@@ -885,6 +1263,20 @@ function seed_glasses_from_price_list(PDO $conn): void
     ];
 
     upsert_catalog_items($conn, 'glasses', $items, true);
+
+    // „Антирефлексен плексиглас“ — същата цена като „Плексиглас 2 mm“.
+    $check = $conn->prepare('SELECT COUNT(*) FROM glasses WHERE name = ?');
+    $check->execute(['Антирефлексен плексиглас']);
+    if ((int)$check->fetchColumn() === 0) {
+        $plexi = $conn->prepare('SELECT price, min_price FROM glasses WHERE name = ?');
+        $plexi->execute(['Плексиглас 2 mm']);
+        $row = $plexi->fetch() ?: ['price' => 21.37, 'min_price' => 1.84];
+        $hasSort = table_has_column($conn, 'glasses', 'sort_order');
+        $conn->prepare($hasSort
+            ? 'INSERT INTO glasses (name, price, min_price, stock, sort_order) VALUES (?, ?, ?, 0, 80)'
+            : 'INSERT INTO glasses (name, price, min_price, stock) VALUES (?, ?, ?, 0)')
+            ->execute(['Антирефлексен плексиглас', (float)$row['price'], (float)$row['min_price']]);
+    }
 }
 
 function seed_backs_from_price_list(PDO $conn): void

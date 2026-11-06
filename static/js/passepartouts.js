@@ -1,6 +1,6 @@
 function confirmDelete(passepartoutId) {
     if (confirm('Сигурни ли сте, че искате да изтриете това паспарту?')) {
-        window.location.href = `${window.BASE_PATH}/delete_passepartout/${passepartoutId}`;
+        postNavigate(`${window.BASE_PATH}/delete_passepartout/${passepartoutId}`);
     }
 }
 

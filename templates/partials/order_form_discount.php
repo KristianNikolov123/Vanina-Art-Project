@@ -14,5 +14,12 @@ $discountFieldId = $discountFieldId ?? '';
         <button type="button" class="btn btn-outline-secondary order-discount-preset" data-percent="5">5%</button>
         <button type="button" class="btn btn-outline-secondary order-discount-preset" data-percent="10">10%</button>
     </div>
-    <div class="form-text">Обемна (−5%/−10%) и ученическа се смятат автоматично</div>
+    <details class="form-text mt-1 discount-guidance">
+        <summary>Ориентир за отстъпка (въвежда се ръчно)</summary>
+        <ul class="mb-0 ps-3">
+            <?php foreach (manual_discount_guidance() as $row): ?>
+            <li><?= e($row['label']) ?> — <?= (int)$row['percent'] ?>%</li>
+            <?php endforeach; ?>
+        </ul>
+    </details>
 </div>

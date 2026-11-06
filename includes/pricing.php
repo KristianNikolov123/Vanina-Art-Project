@@ -41,13 +41,16 @@ function profile_firm_material_linear_meters(
     float $widthCm,
     float $heightCm,
     float $profileWidthCm,
-    int $frameCount = 1
+    int $frameCount = 1,
+    string $profileType = 'wood'
 ): array {
     $baseMeters = profile_billing_linear_meters(
         $widthCm,
         $heightCm,
         $frameCount,
-        $profileWidthCm > 0 ? $profileWidthCm : null
+        $profileWidthCm > 0 ? $profileWidthCm : null,
+        $profileType,
+        true
     );
     $firMeters = profile_material_fir_linear_meters($profileWidthCm, $frameCount);
 
@@ -58,28 +61,211 @@ function profile_firm_material_linear_meters(
     ];
 }
 
+/**
+ * Дълги страни: при добавка (фира = ширина × 8) от 80 см или повече страна над 240 см
+ * се таксува по 290 см (пластмаса) или 300 см (дърво).
+ */
+function profile_long_side_billing_cm(float $sideCm, ?float $profileWidthCm, string $profileType, bool $hasFir): float
+{
+    if (!$hasFir || $profileWidthCm === null || profile_material_fir_cm($profileWidthCm) < 80 - 0.0001) {
+        return $sideCm;
+    }
+    if ($sideCm <= 240) {
+        return $sideCm;
+    }
+
+    return match ($profileType) {
+        'plastic' => max($sideCm, 290.0),
+        'wood' => max($sideCm, 300.0),
+        default => $sideCm,
+    };
+}
+
 function profile_billing_linear_meters(
     float $widthCm,
     float $heightCm,
     int $frameCount = 1,
-    ?float $profileWidthCm = null
+    ?float $profileWidthCm = null,
+    string $profileType = 'wood',
+    bool $hasFir = false
 ): float {
     if ($widthCm <= 0 || $heightCm <= 0 || $frameCount < 1) {
         return 0;
     }
 
-    $billWidth = $widthCm;
-    $billHeight = $heightCm;
-    if ($profileWidthCm !== null && $profileWidthCm >= 10) {
-        if ($widthCm > 250) {
-            $billWidth = 300;
-        }
-        if ($heightCm > 250) {
-            $billHeight = 300;
+    $billWidth = profile_long_side_billing_cm($widthCm, $profileWidthCm, $profileType, $hasFir);
+    $billHeight = profile_long_side_billing_cm($heightCm, $profileWidthCm, $profileType, $hasFir);
+
+    return 2 * ($billWidth + $billHeight) / 100 * $frameCount;
+}
+
+/** '' / null → null; „2,5“ → 2.5 (не по-малко от 0). */
+function parse_cm_value($value): ?float
+{
+    if ($value === null) {
+        return null;
+    }
+    $text = trim(str_replace(',', '.', (string)$value));
+    if ($text === '' || !is_numeric($text)) {
+        return null;
+    }
+
+    return max(0.0, (float)$text);
+}
+
+/**
+ * Четири страни [l, r, t, b]: попълнените отделни клетки имат предимство пред общата стойност.
+ * $divideAll = true → общата стойност се разделя поравно на 4 (поле); false → важи за всяка страна (паспарту).
+ */
+function resolve_four_sides($all, $l, $r, $t, $b, bool $divideAll): array
+{
+    $sides = [parse_cm_value($l), parse_cm_value($r), parse_cm_value($t), parse_cm_value($b)];
+    $hasIndividual = count(array_filter($sides, static fn ($v) => $v !== null)) > 0;
+    if ($hasIndividual) {
+        return array_map(static fn ($v) => $v ?? 0.0, $sides);
+    }
+
+    $allValue = parse_cm_value($all);
+    if ($allValue === null) {
+        return [0.0, 0.0, 0.0, 0.0];
+    }
+    $each = $divideAll ? $allValue / 4 : $allValue;
+
+    return [$each, $each, $each, $each];
+}
+
+function order_field_margins(array $order): array
+{
+    return resolve_four_sides(
+        $order['field_margin_all'] ?? null,
+        $order['field_margin_l'] ?? null,
+        $order['field_margin_r'] ?? null,
+        $order['field_margin_t'] ?? null,
+        $order['field_margin_b'] ?? null,
+        true
+    );
+}
+
+function decode_json_array($raw): array
+{
+    if (is_array($raw)) {
+        return $raw;
+    }
+    if (!is_string($raw) || trim($raw) === '') {
+        return [];
+    }
+    $decoded = json_decode($raw, true);
+
+    return is_array($decoded) ? $decoded : [];
+}
+
+function passepartout_offsets_from_entry(array $entry): array
+{
+    return resolve_four_sides(
+        $entry['all'] ?? null,
+        $entry['l'] ?? null,
+        $entry['r'] ?? null,
+        $entry['t'] ?? null,
+        $entry['b'] ?? null,
+        false
+    );
+}
+
+/**
+ * Слоеве материал (паспарту отгоре надолу, после фон) с отстоянията им.
+ *
+ * @return list<array{name: string, role: string, offsets: array}>
+ */
+function order_material_layers(array $order): array
+{
+    $use = normalize_passepartout_use($order['passepartout_use'] ?? '');
+    if ($use === '') {
+        $use = 'passepartout';
+    }
+
+    $stored = decode_json_array($order['passepartout_layers'] ?? null);
+    $layers = [];
+
+    if ($use !== 'background') {
+        if ($stored !== []) {
+            foreach ($stored as $entry) {
+                if (!is_array($entry)) {
+                    continue;
+                }
+                $layers[] = [
+                    'name' => trim((string)($entry['name'] ?? '')),
+                    'role' => 'passepartout',
+                    'offsets' => passepartout_offsets_from_entry($entry),
+                ];
+            }
+        } else {
+            $names = [];
+            $primary = trim((string)($order['passepartout_primary_name'] ?? $order['passepartout'] ?? ''));
+            if (str_contains($primary, ' + ')) {
+                $primary = trim(explode(' + ', $primary, 2)[0]);
+            }
+            if ($primary !== '' && !str_starts_with($primary, 'Нулево')) {
+                $names[] = $primary;
+            }
+            foreach (preg_split('/\s*,\s*/', trim((string)($order['additional_passepartouts'] ?? ''))) as $extra) {
+                if (trim($extra) !== '') {
+                    $names[] = trim($extra);
+                }
+            }
+            foreach ($names as $name) {
+                $layers[] = ['name' => $name, 'role' => 'passepartout', 'offsets' => [0.0, 0.0, 0.0, 0.0]];
+            }
         }
     }
 
-    return 2 * ($billWidth + $billHeight) / 100 * $frameCount;
+    if ($use === 'background' || $use === 'both') {
+        $bgName = $use === 'background'
+            ? trim((string)($order['passepartout'] ?? ''))
+            : trim((string)($order['passepartout_background'] ?? ''));
+        $bgOffsets = passepartout_offsets_from_entry(decode_json_array($order['passepartout_bg_offsets'] ?? null));
+        if ($bgName !== '' || $bgOffsets !== [0.0, 0.0, 0.0, 0.0]) {
+            $layers[] = ['name' => $bgName, 'role' => 'background', 'offsets' => $bgOffsets];
+        }
+    }
+
+    return $layers;
+}
+
+/**
+ * Размери за цена: картина (ред 1) − поле = основа; паспарту/фон = основа + отстояния;
+ * рамката (профил, стъкло, гръб, окачване) обхваща най-голямото паспарту/фон.
+ */
+function order_pricing_geometry(array $order): array
+{
+    $pictureW = (float)str_replace(',', '.', (string)($order['width'] ?? 0));
+    $pictureH = (float)str_replace(',', '.', (string)($order['height'] ?? 0));
+    [$fl, $fr, $ft, $fb] = order_field_margins($order);
+
+    $baseW = $pictureW > 0 ? max(0.0, $pictureW - $fl - $fr) : 0.0;
+    $baseH = $pictureH > 0 ? max(0.0, $pictureH - $ft - $fb) : 0.0;
+
+    $frameW = $baseW;
+    $frameH = $baseH;
+    $layers = [];
+    foreach (order_material_layers($order) as $layer) {
+        [$l, $r, $t, $b] = $layer['offsets'];
+        $layer['width'] = $baseW > 0 ? round($baseW + $l + $r, 2) : 0.0;
+        $layer['height'] = $baseH > 0 ? round($baseH + $t + $b, 2) : 0.0;
+        $frameW = max($frameW, $layer['width']);
+        $frameH = max($frameH, $layer['height']);
+        $layers[] = $layer;
+    }
+
+    return [
+        'picture_width' => $pictureW,
+        'picture_height' => $pictureH,
+        'field' => [$fl, $fr, $ft, $fb],
+        'base_width' => round($baseW, 2),
+        'base_height' => round($baseH, 2),
+        'frame_width' => round($frameW, 2),
+        'frame_height' => round($frameH, 2),
+        'layers' => $layers,
+    ];
 }
 
 function get_order_profile_names(array $order): array
@@ -108,12 +294,15 @@ function calculate_stacked_profile_material(
     float $width,
     float $height,
     int $frameCount,
-    array $profileNames
+    array $profileNames,
+    string $frameMeasure = ''
 ): array {
     $totalCost = 0.0;
     $totalMeters = 0.0;
     $lines = [];
     $offset = 0.0;
+    // „Външно“: мери се от външен ръб до външен ръб — няма фира, не се начислява добавка.
+    $outerMeasure = $frameMeasure === 'outer';
 
     foreach ($profileNames as $name) {
         $profile = get_catalog_item_by_name($conn, 'profiles', $name);
@@ -127,12 +316,12 @@ function calculate_stacked_profile_material(
         $billH = $height + 2 * $offset;
         $profileType = $profile['profile_type'] ?? 'wood';
         $isFirmMaterial = $profileType !== 'client_material';
-        $applyFir = $isFirmMaterial && profile_type_includes_material_fir($profileType);
+        $applyFir = $isFirmMaterial && profile_type_includes_material_fir($profileType) && !$outerMeasure;
         $firCm = 0.0;
         $firMeters = 0.0;
         $baseMeters = 0.0;
         if ($applyFir && $profileWidth > 0) {
-            $billing = profile_firm_material_linear_meters($billW, $billH, $profileWidth, $frameCount);
+            $billing = profile_firm_material_linear_meters($billW, $billH, $profileWidth, $frameCount, $profileType);
             $baseMeters = $billing['base_meters'];
             $firMeters = $billing['fir_meters'];
             $meters = $billing['total_meters'];
@@ -142,10 +331,14 @@ function calculate_stacked_profile_material(
                 $billW,
                 $billH,
                 $frameCount,
-                $profileWidth > 0 ? $profileWidth : null
+                $profileWidth > 0 ? $profileWidth : null,
+                $profileType,
+                false
             );
             $baseMeters = $meters;
         }
+        $plainMeters = profile_linear_meters($billW, $billH, $frameCount);
+        $longSideBilling = $baseMeters > $plainMeters + 0.0001;
 
         $cost = 0.0;
         if ($isFirmMaterial) {
@@ -164,6 +357,9 @@ function calculate_stacked_profile_material(
             'bill_width' => $billW,
             'bill_height' => $billH,
             'cost' => round($cost, 2),
+            'unit_price' => (float)$profile['price'],
+            'firm_material' => $isFirmMaterial,
+            'long_side_billing' => $longSideBilling,
             'profile' => $profile,
         ];
 
@@ -376,6 +572,10 @@ function resolve_passepartout(PDO $conn, ?int $passepartoutId, ?string $passepar
     }
 
     $name = trim($passepartoutName ?? '');
+    if (str_contains($name, ' + ')) {
+        // „12 (паспарту) + 7 (фон)“ — първият лист е паспартуто.
+        $name = trim(explode(' + ', $name, 2)[0]);
+    }
     if ($name === '') {
         return null;
     }
@@ -422,7 +622,9 @@ function calculate_area_price(float $sqm, float $pricePerSqm, float $minPrice, i
 }
 
 /**
- * Side-length surcharge once per frame: longest side >= 200 cm or >= 150 cm (not per dimension).
+ * Надценка за големи рамки (веднъж на рамка, прилага се само най-високата приложима):
+ * поне една страна ≥150 см → 3.00 €; и четирите ≥150 → 2 × 3.00 €;
+ * поне една страна ≥200 см → 6.00 €; и четирите ≥200 → 2 × 6.00 €.
  */
 function frame_labor_side_surcharge(PDO $conn, float $widthCm, float $heightCm): float
 {
@@ -430,15 +632,99 @@ function frame_labor_side_surcharge(PDO $conn, float $widthCm, float $heightCm):
         return 0.0;
     }
 
-    $longestSide = max($widthCm, $heightCm);
-    if ($longestSide >= 200) {
-        return get_pricing_setting($conn, 'frame_surcharge_side_200', 6.09);
+    $s150 = get_pricing_setting($conn, 'frame_surcharge_side_150', 3.00);
+    $s200 = get_pricing_setting($conn, 'frame_surcharge_side_200', 6.00);
+    $longest = max($widthCm, $heightCm);
+    $shortest = min($widthCm, $heightCm);
+
+    $candidates = [0.0];
+    if ($longest >= 150) {
+        $candidates[] = $s150;
     }
-    if ($longestSide >= 150) {
-        return get_pricing_setting($conn, 'frame_surcharge_side_150', 2.54);
+    if ($shortest >= 150) {
+        $candidates[] = 2 * $s150;
+    }
+    if ($longest >= 200) {
+        $candidates[] = $s200;
+    }
+    if ($shortest >= 200) {
+        $candidates[] = 2 * $s200;
     }
 
-    return 0.0;
+    return round(max($candidates), 2);
+}
+
+/**
+ * Подрамка (основна дебелина 2.2 см; 2.6 см ×1.2, 3.3 см ×1.4 върху материал и труд).
+ * Материал: до 50/70 — периметър; 50/70–70/100 — 3 × късата + 2 × дългата (една напречна летва);
+ * 70/100–100/150 — 4 × късата + 2 × дългата (две летви). Над 100/150 — договорена цена.
+ */
+function calculate_subframe_pricing(PDO $conn, array $order, float $widthCm, float $heightCm, int $frameCount): ?array
+{
+    $thickness = trim((string)($order['subframe_thickness'] ?? ''));
+    if (!array_key_exists($thickness, subframe_thickness_options()) || $thickness === '') {
+        return null;
+    }
+
+    $factor = match ($thickness) {
+        '2.6' => get_pricing_setting($conn, 'subframe_factor_26', 1.2),
+        '3.3' => get_pricing_setting($conn, 'subframe_factor_33', 1.4),
+        default => 1.0,
+    };
+
+    $short = min($widthCm, $heightCm);
+    $long = max($widthCm, $heightCm);
+    $manualPrice = parse_cm_value($order['subframe_manual_price'] ?? null);
+
+    $tier = null;
+    if ($short > 0 && $long > 0) {
+        foreach ([1 => [30, 40], 2 => [50, 70], 3 => [70, 100], 4 => [100, 150]] as $index => [$maxShort, $maxLong]) {
+            if ($short <= $maxShort + 0.001 && $long <= $maxLong + 0.001) {
+                $tier = $index;
+                break;
+            }
+        }
+    }
+
+    if ($tier === null) {
+        $cost = $manualPrice !== null ? round($manualPrice, 2) : 0.0;
+
+        return [
+            'thickness' => $thickness,
+            'tier' => null,
+            'manual' => true,
+            'needs_manual_price' => $manualPrice === null,
+            'meters' => 0.0,
+            'material_cost' => $cost,
+            'labor_cost' => 0.0,
+            'factor' => $factor,
+            'cost' => $cost,
+        ];
+    }
+
+    $metersPerPiece = match ($tier) {
+        3 => (3 * $short + 2 * $long) / 100,
+        4 => (4 * $short + 2 * $long) / 100,
+        default => 2 * ($short + $long) / 100,
+    };
+    $pricePerLm = get_pricing_setting($conn, "subframe_lm_tier_{$tier}", [1 => 6.90, 2 => 6.90, 3 => 7.80, 4 => 9.00][$tier]);
+    $laborPerPiece = $tier === 1 ? 0.0 : get_pricing_setting($conn, 'subframe_labor', 3.00);
+
+    $material = round($metersPerPiece * $pricePerLm * $factor * $frameCount, 2);
+    $labor = round($laborPerPiece * $factor * $frameCount, 2);
+
+    return [
+        'thickness' => $thickness,
+        'tier' => $tier,
+        'manual' => false,
+        'needs_manual_price' => false,
+        'meters' => round($metersPerPiece * $frameCount, 2),
+        'price_per_lm' => $pricePerLm,
+        'material_cost' => $material,
+        'labor_cost' => $labor,
+        'factor' => $factor,
+        'cost' => round($material + $labor, 2),
+    ];
 }
 
 function calculate_frame_labor(
@@ -476,14 +762,40 @@ function calculate_frame_labor(
     return round($perFrame * $frameCount, 2);
 }
 
-function calculate_extra_services_cost(PDO $conn, array $order, float $widthCm, float $heightCm, int $frameCount): array
+/** {service_id: price} — договорени цени за услуги с клетка за цена. */
+function parse_extra_services_manual_prices($raw): array
 {
+    $prices = [];
+    foreach (decode_json_array($raw) as $id => $value) {
+        $price = parse_cm_value($value);
+        if ((int)$id > 0 && $price !== null) {
+            $prices[(int)$id] = $price;
+        }
+    }
+
+    return $prices;
+}
+
+/**
+ * @param float $widthCm  ширина от ред 1 (за услуги по кв.м)
+ * @param float $frameWidthCm ширина на рамката (за дистанционер)
+ */
+function calculate_extra_services_cost(
+    PDO $conn,
+    array $order,
+    float $widthCm,
+    float $heightCm,
+    int $frameCount,
+    ?float $frameWidthCm = null,
+    ?float $frameHeightCm = null
+): array {
     $ids = parse_extra_service_ids($order['extra_services'] ?? []);
     if (empty($ids)) {
         return ['total' => 0.0, 'lines' => []];
     }
 
     $sqm = glass_square_meters($widthCm, $heightCm, $frameCount);
+    $manualPrices = parse_extra_services_manual_prices($order['extra_services_manual'] ?? null);
     $lines = [];
     $total = 0.0;
 
@@ -498,8 +810,16 @@ function calculate_extra_services_cost(PDO $conn, array $order, float $widthCm, 
         $unit = $service['pricing_unit'] ?? 'piece';
         $price = (float)$service['price'];
         $minPrice = (float)($service['min_price'] ?? 0);
+        $extraLabel = '';
 
-        if ($unit === 'sqm') {
+        if ($unit === 'manual') {
+            // Договорена/твърда цена за поръчката, въведена от служителя.
+            $manual = $manualPrices[(int)$id] ?? null;
+            $cost = $manual !== null ? round($manual, 2) : 0.0;
+            if ($manual === null) {
+                $extraLabel = ' (въведете цена)';
+            }
+        } elseif ($unit === 'sqm') {
             if ($sqm > 0) {
                 $cost = calculate_area_price($sqm, $price, $minPrice, $frameCount);
             } else {
@@ -513,22 +833,67 @@ function calculate_extra_services_cost(PDO $conn, array $order, float $widthCm, 
             } else {
                 $cost = round($minPrice > 0 ? $minPrice : $price, 2);
             }
-        } elseif (str_contains($service['name'], 'Качване материали') && (int)($order['carry_floors'] ?? 0) > 0) {
-            $floors = (int)$order['carry_floors'];
-            $cost = round($price * $floors, 2);
         } else {
-            $perPiece = $price;
-            if ($minPrice > 0 && $perPiece < $minPrice) {
-                $perPiece = $minPrice;
+            // €/бр. × брой рамки; минимумът (напр. „Монтаж на място — мин. 40 €“) е за поръчката.
+            $cost = round($price * $frameCount, 2);
+            if ($minPrice > 0 && $cost < $minPrice) {
+                $cost = round($minPrice, 2);
             }
-            $cost = round($perPiece * $frameCount, 2);
+        }
+
+        if (service_is_spacer($service)) {
+            $spacer = calculate_spacer_profile_cost(
+                $conn,
+                (string)($order['spacer_profile'] ?? ''),
+                $frameWidthCm ?? $widthCm,
+                $frameHeightCm ?? $heightCm,
+                $frameCount
+            );
+            if ($spacer !== null) {
+                $cost = round($cost + $spacer['cost'], 2);
+                $extraLabel = sprintf(' (+ дистанционер %s: %.2f л.м.)', $spacer['name'], $spacer['meters']);
+            } else {
+                $extraLabel = ' (изберете дистанционер)';
+            }
         }
 
         $total += $cost;
-        $lines[] = ['name' => $service['name'], 'cost' => round($cost, 2)];
+        $lines[] = ['name' => $service['name'] . $extraLabel, 'cost' => round($cost, 2)];
     }
 
     return ['total' => round($total, 2), 'lines' => $lines];
+}
+
+/** Дистанционерът е профил от склада: цена €/л.м. × периметъра на рамката (без фира). */
+function calculate_spacer_profile_cost(PDO $conn, string $profileName, float $widthCm, float $heightCm, int $frameCount): ?array
+{
+    $profileName = trim($profileName);
+    if ($profileName === '' || $widthCm <= 0 || $heightCm <= 0) {
+        return null;
+    }
+    $profile = get_catalog_item_by_name($conn, 'profiles', $profileName);
+    if (!$profile) {
+        return null;
+    }
+    $meters = profile_linear_meters($widthCm, $heightCm, $frameCount);
+
+    return [
+        'name' => $profile['name'],
+        'meters' => round($meters, 2),
+        'unit_price' => (float)$profile['price'],
+        'stock' => (float)($profile['stock'] ?? 0),
+        'cost' => round($meters * (float)$profile['price'], 2),
+    ];
+}
+
+/** urgent: 0 — не; 1 — за същия ден (до 12:00); 2 — за следващия ден (до 15:00). */
+function order_urgent_percent(PDO $conn, array $order): float
+{
+    return match ((int)($order['urgent'] ?? 0)) {
+        1 => get_pricing_setting($conn, 'urgent_surcharge_percent', 50),
+        2 => get_pricing_setting($conn, 'urgent_next_day_percent', 30),
+        default => 0.0,
+    };
 }
 
 function apply_order_price_modifiers(PDO $conn, array $order, float $subtotal, float $passepartoutCost, int $frameCount): array
@@ -541,41 +906,28 @@ function apply_order_price_modifiers(PDO $conn, array $order, float $subtotal, f
 
     $afterComplex = $subtotal + $complexSurcharge;
 
-    $volumeDiscount = 0.0;
-    $threshold10 = get_pricing_setting($conn, 'volume_discount_10_threshold', 510.20);
-    $threshold5 = get_pricing_setting($conn, 'volume_discount_5_threshold', 255.64);
-    if ($afterComplex >= $threshold10) {
-        $volumeDiscount = round($afterComplex * get_pricing_setting($conn, 'volume_discount_10_percent', 10) / 100, 2);
-    } elseif ($afterComplex >= $threshold5) {
-        $volumeDiscount = round($afterComplex * get_pricing_setting($conn, 'volume_discount_5_percent', 5) / 100, 2);
-    }
-
-    $studentDiscount = 0.0;
-    if (!empty($order['student_discount'])) {
-        $studentDiscount = round(
-            $afterComplex * get_pricing_setting($conn, 'student_discount_percent', 10) / 100,
-            2
-        );
-    }
-
+    // Отстъпките са само ръчни (автоматичната обемна и ученическата отпаднаха).
     $manualPercent = max(0, min(100, (float)($order['manual_discount'] ?? 0)));
     $manualDiscount = round($afterComplex * $manualPercent / 100, 2);
-    $afterDiscounts = max(0, $afterComplex - $volumeDiscount - $studentDiscount - $manualDiscount);
+    $afterDiscounts = max(0, $afterComplex - $manualDiscount);
 
-    $urgentSurcharge = 0.0;
-    if (!empty($order['urgent'])) {
-        $urgentPercent = get_pricing_setting($conn, 'urgent_surcharge_percent', 50);
-        $urgentSurcharge = round($afterDiscounts * $urgentPercent / 100, 2);
-    }
+    $urgentPercent = order_urgent_percent($conn, $order);
+    $urgentSurcharge = $urgentPercent > 0 ? round($afterDiscounts * $urgentPercent / 100, 2) : 0.0;
 
-    $total = round($afterDiscounts + $urgentSurcharge, 2);
+    $complexOrderPercent = max(0, min(100, (float)($order['complex_order_percent'] ?? 0)));
+    $complexOrderSurcharge = $complexOrderPercent > 0 ? round($afterDiscounts * $complexOrderPercent / 100, 2) : 0.0;
+
+    $total = round($afterDiscounts + $urgentSurcharge + $complexOrderSurcharge, 2);
 
     return [
         'complex_passepartout_surcharge' => $complexSurcharge,
-        'volume_discount' => $volumeDiscount,
-        'student_discount_amount' => $studentDiscount,
+        'volume_discount' => 0.0,
+        'student_discount_amount' => 0.0,
         'manual_discount' => $manualDiscount,
         'urgent_surcharge' => $urgentSurcharge,
+        'urgent_percent' => $urgentPercent,
+        'complex_order_surcharge' => $complexOrderSurcharge,
+        'complex_order_percent' => $complexOrderPercent,
         'subtotal' => round($subtotal, 2),
         'total' => $total,
     ];
@@ -1129,6 +1481,35 @@ function calculate_passepartout_layer_billing(PDO $conn, array $order, int $pass
     ];
 }
 
+/** Поръчката с размерите на конкретен слой (паспарту/фон) — за фактуриране и склад. */
+function order_with_layer_dimensions(array $order, ?array $layer): array
+{
+    if ($layer === null || ($layer['width'] ?? 0) <= 0 || ($layer['height'] ?? 0) <= 0) {
+        return $order;
+    }
+
+    return array_merge($order, ['width' => $layer['width'], 'height' => $layer['height']]);
+}
+
+/** [първи слой паспарту, допълнителни слоеве паспарту, фон] с изчислени размери. */
+function order_geometry_layer_groups(array $order): array
+{
+    $primary = null;
+    $extra = [];
+    $background = null;
+    foreach (order_pricing_geometry($order)['layers'] as $layer) {
+        if ($layer['role'] === 'background') {
+            $background = $layer;
+        } elseif ($primary === null) {
+            $primary = $layer;
+        } else {
+            $extra[] = $layer;
+        }
+    }
+
+    return [$primary, $extra, $background];
+}
+
 function calculate_passepartout_billing(PDO $conn, array $order): ?array
 {
     $use = normalize_passepartout_use($order['passepartout_use'] ?? '');
@@ -1136,13 +1517,13 @@ function calculate_passepartout_billing(PDO $conn, array $order): ?array
         $use = 'passepartout';
     }
 
-    $primaryId = 0;
-    if (empty($order['passepartout_zero'])) {
-        $primaryId = (int)($order['passepartout_id'] ?? 0);
-        if ($primaryId <= 0) {
-            $resolved = resolve_passepartout($conn, null, $order['passepartout'] ?? null);
-            $primaryId = $resolved ? (int)$resolved['id'] : 0;
-        }
+    [$primaryGeo, , $backgroundGeo] = order_geometry_layer_groups($order);
+    $primaryOrder = order_with_layer_dimensions($order, $use === 'background' ? $backgroundGeo : $primaryGeo);
+
+    $primaryId = (int)($order['passepartout_id'] ?? 0);
+    if ($primaryId <= 0) {
+        $resolved = resolve_passepartout($conn, null, $order['passepartout'] ?? null);
+        $primaryId = $resolved ? (int)$resolved['id'] : 0;
     }
 
     if ($use === 'both') {
@@ -1152,8 +1533,10 @@ function calculate_passepartout_billing(PDO $conn, array $order): ?array
             $backgroundId = $resolvedBg ? (int)$resolvedBg['id'] : 0;
         }
 
-        $primaryLayer = $primaryId > 0 ? calculate_passepartout_layer_billing($conn, $order, $primaryId) : null;
-        $backgroundLayer = $backgroundId > 0 ? calculate_passepartout_layer_billing($conn, $order, $backgroundId) : null;
+        $primaryLayer = $primaryId > 0 ? calculate_passepartout_layer_billing($conn, $primaryOrder, $primaryId) : null;
+        $backgroundLayer = $backgroundId > 0
+            ? calculate_passepartout_layer_billing($conn, order_with_layer_dimensions($order, $backgroundGeo), $backgroundId)
+            : null;
 
         if (!$primaryLayer && !$backgroundLayer) {
             return null;
@@ -1192,7 +1575,7 @@ function calculate_passepartout_billing(PDO $conn, array $order): ?array
         return null;
     }
 
-    $layer = calculate_passepartout_layer_billing($conn, $order, $primaryId);
+    $layer = calculate_passepartout_layer_billing($conn, $primaryOrder, $primaryId);
     if (!$layer) {
         return null;
     }
@@ -1235,9 +1618,15 @@ function calculate_passepartout_sheet_usage(
 
 function calculate_order_pricing(PDO $conn, array $order): array
 {
-    $width = (float)($order['width'] ?? 0);
-    $height = (float)($order['height'] ?? 0);
+    $geometry = order_pricing_geometry($order);
+    // Размери на рамката: картина − поле, разширени до най-голямото паспарту/фон.
+    $width = $geometry['frame_width'];
+    $height = $geometry['frame_height'];
+    // Размери от ред 1 — за услуги по кв.м и подрамка.
+    $pictureWidth = $geometry['picture_width'];
+    $pictureHeight = $geometry['picture_height'];
     $frameCount = max(1, (int)($order['frame_count'] ?? 1));
+    $frameMeasure = in_array($order['frame_measure'] ?? '', ['clear', 'outer'], true) ? $order['frame_measure'] : '';
 
     $profileMaterialCost = 0.0;
     $profileMeters = 0.0;
@@ -1254,7 +1643,7 @@ function calculate_order_pricing(PDO $conn, array $order): array
     $usesReadyFrame = !empty($order['profile_ready_frame']);
 
     if ($width > 0 && $height > 0 && !empty($profileNames) && !$usesReadyFrame) {
-        $stacked = calculate_stacked_profile_material($conn, $width, $height, $frameCount, $profileNames);
+        $stacked = calculate_stacked_profile_material($conn, $width, $height, $frameCount, $profileNames, $frameMeasure);
         $profileMaterialCost = $stacked['material_cost'];
         $profileMeters = $stacked['total_meters'];
         $profileLines = $stacked['lines'];
@@ -1280,36 +1669,36 @@ function calculate_order_pricing(PDO $conn, array $order): array
         unset($profileLine);
     }
 
-    $frameShape = $order['frame_shape'] ?? '';
+    // Нестандартна фигура: метраж (по правоъгълника) × 1.25 × цена на профила × коефициент; мин. 10 €/бр.
+    $frameShape = (string)($order['frame_shape'] ?? '');
     $frameShapeLabel = '';
-    if (in_array($frameShape, ['ellipse_12', 'circle_24'], true)) {
-        if ($profileName !== '' && $width > 0 && $height > 0) {
-            $profileMeters = round($profileMeters * 1.25, 2);
-            $profileMaterialCost = round($profileMaterialCost * 1.25, 2);
-            foreach ($profileLines as &$profileLine) {
-                if (!empty($profileLine['found'])) {
-                    $profileLine['meters'] = round($profileLine['meters'] * 1.25, 2);
-                    $profileLine['cost'] = round($profileLine['cost'] * 1.25, 2);
-                }
+    $shapeCoefficient = frame_shape_coefficient($conn, $frameShape);
+    if ($shapeCoefficient > 0 && $profileName !== '' && !$usesReadyFrame) {
+        $meterFactor = get_pricing_setting($conn, 'frame_shape_material_factor', 1.25);
+        $shapeMin = get_pricing_setting($conn, 'frame_shape_min_price', 10.00) * $frameCount;
+        $shapedCost = 0.0;
+        $shapedMeters = 0.0;
+        foreach ($profileLines as &$profileLine) {
+            if (empty($profileLine['found'])) {
+                continue;
             }
-            unset($profileLine);
-            if ($frameShape === 'ellipse_12') {
-                $frameLaborCost = round($frameLaborCost * 3, 2);
-                $frameShapeLabel = 'елипса/кръг 12';
-            } else {
-                $frameLaborCost = round($frameLaborCost * 4, 2);
-                $frameShapeLabel = 'кръг 24';
-            }
-        } else {
-            $minLabor = get_pricing_setting($conn, 'frame_labor_min', 3.54) * $frameCount;
-            if ($frameShape === 'ellipse_12') {
-                $frameLaborCost += round($minLabor * 3, 2);
-                $frameShapeLabel = 'елипса/кръг 12';
-            } else {
-                $frameLaborCost += round($minLabor * 4, 2);
-                $frameShapeLabel = 'кръг 24';
-            }
+            $profileLine['meters'] = round($profileLine['meters'] * $meterFactor, 2);
+            $profileLine['cost'] = !empty($profileLine['firm_material'])
+                ? round($profileLine['meters'] * $profileLine['unit_price'] * $shapeCoefficient, 2)
+                : 0.0;
+            $shapedCost += $profileLine['cost'];
+            $shapedMeters += $profileLine['meters'];
         }
+        unset($profileLine);
+        $profileMeters = round($shapedMeters, 2);
+        $profileMaterialCost = round(max($shapedCost, $shapeMin), 2);
+        $frameShapeLabel = sprintf(
+            '%s: метраж ×%s, цена ×%s, мин. %s €/бр.',
+            frame_shape_label($frameShape),
+            rtrim(rtrim(number_format($meterFactor, 2, '.', ''), '0'), '.'),
+            rtrim(rtrim(number_format($shapeCoefficient, 2, '.', ''), '0'), '.'),
+            number_format($shapeMin / $frameCount, 2, '.', '')
+        );
     }
 
     $frameExtrasCost = 0.0;
@@ -1326,7 +1715,7 @@ function calculate_order_pricing(PDO $conn, array $order): array
             ? round(max($frameValue * 0.3, $minNonstandard), 2)
             : round($minNonstandard, 2);
         $frameExtrasCost += $nonstandardCost;
-        $frameExtrasLines[] = ['name' => 'Нестандартна форма', 'cost' => $nonstandardCost];
+        $frameExtrasLines[] = ['name' => 'Нестандартна изработка', 'cost' => $nonstandardCost];
     }
     if (!empty($order['frame_high_complexity'])) {
         $frameValue = $profileMaterialCost + $frameLaborCost;
@@ -1391,26 +1780,36 @@ function calculate_order_pricing(PDO $conn, array $order): array
     }
 
     $hangerName = trim($order['hanger'] ?? '');
+    $hangerCount = 0;
+    $hangerCost = 0.0;
     if ($hangerName !== '') {
-        $hangingCost += calculate_hanging_cost($conn, $hangerName, $width, $height, $frameCount, 0);
+        $hangerCount = order_hanger_count($order);
+        $hangerCost = round(
+            calculate_hanging_cost($conn, $hangerName, $width, $height, $frameCount, 0) * $hangerCount,
+            2
+        );
+        $hangingCost = round($hangingCost + $hangerCost, 2);
     }
 
     $passepartout = calculate_passepartout_billing($conn, $order);
     $passepartoutMaterialCost = $passepartout['cost'] ?? 0.0;
-    $extraPpList = trim($order['additional_passepartouts'] ?? '');
-    if ($extraPpList !== '') {
-        foreach (preg_split('/\s*,\s*/', $extraPpList) as $extraPpName) {
-            $extraPpName = trim($extraPpName);
-            if ($extraPpName === '') {
-                continue;
-            }
-            $resolvedExtra = resolve_passepartout($conn, null, $extraPpName);
+    $passepartoutExtraLayers = [];
+    [, $extraLayerGeometry] = order_geometry_layer_groups($order);
+    $use = normalize_passepartout_use($order['passepartout_use'] ?? '') ?: 'passepartout';
+    if ($use !== 'background') {
+        foreach ($extraLayerGeometry as $extraGeo) {
+            $resolvedExtra = resolve_passepartout($conn, null, $extraGeo['name']);
             if (!$resolvedExtra) {
                 continue;
             }
-            $extraLayer = calculate_passepartout_layer_billing($conn, $order, (int)$resolvedExtra['id']);
+            $extraLayer = calculate_passepartout_layer_billing(
+                $conn,
+                order_with_layer_dimensions($order, $extraGeo),
+                (int)$resolvedExtra['id']
+            );
             if ($extraLayer) {
                 $passepartoutMaterialCost += (float)($extraLayer['cost'] ?? 0);
+                $passepartoutExtraLayers[] = $extraLayer;
             }
         }
     }
@@ -1418,18 +1817,53 @@ function calculate_order_pricing(PDO $conn, array $order): array
     $passepartoutLaborCost = calculate_passepartout_labor_cost($conn, $order, $passepartout, $frameCount);
     $passepartoutCost = round($passepartoutMaterialCost + $passepartoutLaborCost, 2);
 
-    $extraServices = calculate_extra_services_cost($conn, $order, $width, $height, $frameCount);
+    $extraServices = calculate_extra_services_cost(
+        $conn,
+        $order,
+        $pictureWidth,
+        $pictureHeight,
+        $frameCount,
+        $width,
+        $height
+    );
+    $subframe = calculate_subframe_pricing($conn, $order, $pictureWidth, $pictureHeight, $frameCount);
+    $subframeCost = $subframe['cost'] ?? 0.0;
+
     $materialsSubtotal = round(
-        $profileCost + $glassCost + $backCost + $hangingCost + $passepartoutCost + $extraServices['total'],
+        $profileCost + $glassCost + $backCost + $hangingCost + $passepartoutCost + $extraServices['total'] + $subframeCost,
         2
     );
 
     $modifiers = apply_order_price_modifiers($conn, $order, $materialsSubtotal, $passepartoutCost, $frameCount);
 
+    $longSideBilling = false;
+    foreach ($profileLines as $line) {
+        $longSideBilling = $longSideBilling || !empty($line['long_side_billing']);
+    }
+
     return [
+        'geometry' => [
+            'picture_width' => $pictureWidth,
+            'picture_height' => $pictureHeight,
+            'base_width' => $geometry['base_width'],
+            'base_height' => $geometry['base_height'],
+            'frame_width' => $width,
+            'frame_height' => $height,
+            'field' => $geometry['field'],
+            'layers' => array_map(static fn (array $layer): array => [
+                'name' => $layer['name'],
+                'role' => $layer['role'],
+                'width' => $layer['width'],
+                'height' => $layer['height'],
+            ], $geometry['layers']),
+        ],
+        'frame_measure' => $frameMeasure,
         'profile_material_cost' => round($profileMaterialCost, 2),
         'profile_ready_frame_cost' => round($readyFrameCost, 2),
         'frame_labor_cost' => $frameLaborCost,
+        'frame_side_surcharge' => ($width > 0 && $height > 0 && !empty($profileNames))
+            ? round(frame_labor_side_surcharge($conn, $width, $height) * $frameCount, 2)
+            : 0.0,
         'profile_cost' => $profileCost,
         'profile_meters' => round($profileMeters, 2),
         'profile_lines' => array_map(static function (array $line): array {
@@ -1444,30 +1878,38 @@ function calculate_order_pricing(PDO $conn, array $order): array
                 'base_meters' => isset($line['base_meters']) ? (float)$line['base_meters'] : null,
                 'fir_cm' => isset($line['fir_cm']) ? (float)$line['fir_cm'] : null,
                 'fir_meters' => isset($line['fir_meters']) ? (float)$line['fir_meters'] : null,
+                'long_side_billing' => !empty($line['long_side_billing']),
             ];
         }, $profileLines),
-        'profile_wide_billing' => $mainProfile && isset($mainProfile['width_cm']) && (float)$mainProfile['width_cm'] >= 10
-            && (max($width, $height) > 250),
+        'profile_wide_billing' => $longSideBilling,
         'glass_cost' => $glassCost,
         'glass_sqm' => round($glassSqm, 4),
         'back_cost' => $backCost,
         'back_sqm' => round($backSqm, 4),
         'hanging_cost' => $hangingCost,
         'hanging' => $hangingDetail,
+        'hanger_count' => $hangerCount,
+        'hanger_cost' => $hangerCost,
         'passepartout' => $passepartout,
+        'passepartout_extra_layers' => $passepartoutExtraLayers,
         'passepartout_openings' => $openings,
         'passepartout_material_cost' => round($passepartoutMaterialCost, 2),
         'passepartout_labor_cost' => round($passepartoutLaborCost, 2),
         'passepartout_cost' => $passepartoutCost,
         'extra_services' => $extraServices['lines'],
         'extra_services_cost' => $extraServices['total'],
+        'subframe' => $subframe,
+        'subframe_cost' => round($subframeCost, 2),
         'materials_subtotal' => $materialsSubtotal,
         'complex_passepartout_surcharge' => $modifiers['complex_passepartout_surcharge'],
-        'volume_discount' => $modifiers['volume_discount'],
-        'student_discount_amount' => $modifiers['student_discount_amount'],
+        'volume_discount' => 0.0,
+        'student_discount_amount' => 0.0,
         'manual_discount_amount' => $modifiers['manual_discount'],
         'manual_discount_percent' => max(0, min(100, (float)($order['manual_discount'] ?? 0))),
         'urgent_surcharge' => $modifiers['urgent_surcharge'],
+        'urgent_percent' => $modifiers['urgent_percent'],
+        'complex_order_surcharge' => $modifiers['complex_order_surcharge'],
+        'complex_order_percent' => $modifiers['complex_order_percent'],
         'profile_found' => $profileName !== '' ? (bool)$mainProfile : null,
         'frame_shape' => $frameShapeLabel,
         'frame_extras' => $frameExtrasLines,
@@ -1475,6 +1917,17 @@ function calculate_order_pricing(PDO $conn, array $order): array
         'subtotal' => $modifiers['subtotal'],
         'total' => $modifiers['total'],
     ];
+}
+
+/** Брой закачалки на рамка (по подразбиране 2). */
+function order_hanger_count(array $order): int
+{
+    $raw = $order['hanger_count'] ?? null;
+    if ($raw === null || $raw === '') {
+        return 2;
+    }
+
+    return max(0, (int)$raw);
 }
 
 function enrich_order_pricing_fields(PDO $conn, array $order): array
@@ -1509,7 +1962,37 @@ function enrich_order_pricing_fields(PDO $conn, array $order): array
         $order['passepartout_id'] = $passepartout['passepartout_id'];
     }
 
+    // Допълнителните паспартута (2, 3…) се записват с поръчката, за да се отчислят и върнат точно.
+    $order['passepartout_extra_stock'] = json_encode(resolve_extra_passepartout_stock_actions($conn, $order));
+
     return $order;
+}
+
+/** Склад за допълнителните слоеве паспарту (изчислено по размера на всеки слой). */
+function resolve_extra_passepartout_stock_actions(PDO $conn, array $order): array
+{
+    $use = normalize_passepartout_use($order['passepartout_use'] ?? '') ?: 'passepartout';
+    if ($use === 'background') {
+        return [];
+    }
+    [, $extraLayers] = order_geometry_layer_groups($order);
+    $actions = [];
+    foreach ($extraLayers as $layer) {
+        $pp = resolve_passepartout($conn, null, $layer['name']);
+        if (!$pp) {
+            continue;
+        }
+        $billing = calculate_passepartout_layer_billing($conn, order_with_layer_dimensions($order, $layer), (int)$pp['id']);
+        if ($billing && (int)$billing['sheet_type_id'] > 0 && (float)$billing['sheet_usage'] > 0) {
+            $actions[] = [
+                'passepartout_id' => (int)$pp['id'],
+                'sheet_type_id' => (int)$billing['sheet_type_id'],
+                'usage' => (float)$billing['sheet_usage'],
+            ];
+        }
+    }
+
+    return $actions;
 }
 
 function get_passepartout_sheet_stocks(PDO $conn, int $passepartoutId): array
@@ -1599,29 +2082,26 @@ function apply_passepartout_sheet_stock(
     $change = $direction > 0 ? $usage : -$usage;
 
     if ($change > 0) {
-        $stmt = $conn->prepare('
-            INSERT INTO passepartout_sheet_stock (passepartout_id, sheet_type_id, stock)
-            VALUES (?, ?, ?)
-            ON DUPLICATE KEY UPDATE stock = stock + VALUES(stock)
-        ');
-        if ($conn->getAttribute(PDO::ATTR_DRIVER_NAME) !== 'mysql') {
-            $stmt = $conn->prepare('
-                INSERT INTO passepartout_sheet_stock (passepartout_id, sheet_type_id, stock)
-                VALUES (?, ?, ?)
-                ON CONFLICT(passepartout_id, sheet_type_id) DO UPDATE SET stock = stock + excluded.stock
-            ');
-        }
+        $stmt = $conn->prepare($conn->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql'
+            ? 'INSERT INTO passepartout_sheet_stock (passepartout_id, sheet_type_id, stock) VALUES (?, ?, ?)
+               ON DUPLICATE KEY UPDATE stock = stock + VALUES(stock)'
+            : 'INSERT INTO passepartout_sheet_stock (passepartout_id, sheet_type_id, stock) VALUES (?, ?, ?)
+               ON CONFLICT(passepartout_id, sheet_type_id) DO UPDATE SET stock = stock + excluded.stock');
         $stmt->execute([$passepartoutId, $sheetTypeId, $change]);
         return;
     }
 
+    // Без отрязване на 0: иначе връщането при изтриване/редакция добавя материал, който не е бил отчислен.
+    // Отрицателна наличност = липсващо количество (виж „Материалът е наличен“).
     $deduct = abs($change);
     $stmt = $conn->prepare('
-        UPDATE passepartout_sheet_stock
-        SET stock = CASE WHEN stock - ? < 0 THEN 0 ELSE stock - ? END
-        WHERE passepartout_id = ? AND sheet_type_id = ?
+        INSERT INTO passepartout_sheet_stock (passepartout_id, sheet_type_id, stock)
+        VALUES (?, ?, ?)
+        ' . ($conn->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql'
+            ? 'ON DUPLICATE KEY UPDATE stock = stock + VALUES(stock)'
+            : 'ON CONFLICT(passepartout_id, sheet_type_id) DO UPDATE SET stock = stock + excluded.stock') . '
     ');
-    $stmt->execute([$deduct, $deduct, $passepartoutId, $sheetTypeId]);
+    $stmt->execute([$passepartoutId, $sheetTypeId, -$deduct]);
 }
 
 function resolve_passepartout_stock_actions(PDO $conn, array $order): array
@@ -1669,7 +2149,12 @@ function resolve_passepartout_stock_actions(PDO $conn, array $order): array
             $usage = (float)($order['passepartout_bg_sheet_usage'] ?? 0);
 
             if ($sheetTypeId <= 0 || $usage <= 0) {
-                $layer = calculate_passepartout_layer_billing($conn, $order, (int)$bgPp['id']);
+                [, , $backgroundGeo] = order_geometry_layer_groups($order);
+                $layer = calculate_passepartout_layer_billing(
+                    $conn,
+                    order_with_layer_dimensions($order, $backgroundGeo),
+                    (int)$bgPp['id']
+                );
                 if ($layer) {
                     $sheetTypeId = (int)$layer['sheet_type_id'];
                     $usage = (float)$layer['sheet_usage'];
@@ -1683,6 +2168,17 @@ function resolve_passepartout_stock_actions(PDO $conn, array $order): array
                     'usage' => $usage,
                 ];
             }
+        }
+    }
+
+    // Само за поръчки, записани след добавянето (старите не са отчислявали тези слоеве).
+    foreach (decode_json_array($order['passepartout_extra_stock'] ?? null) as $extra) {
+        if (is_array($extra) && (int)($extra['passepartout_id'] ?? 0) > 0 && (float)($extra['usage'] ?? 0) > 0) {
+            $actions[] = [
+                'passepartout_id' => (int)$extra['passepartout_id'],
+                'sheet_type_id' => (int)$extra['sheet_type_id'],
+                'usage' => (float)$extra['usage'],
+            ];
         }
     }
 

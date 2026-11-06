@@ -1,6 +1,6 @@
 function confirmDelete(backId) {
     if (confirm('Сигурни ли сте, че искате да изтриете този гръб?')) {
-        window.location.href = `${window.BASE_PATH}/delete_back/${backId}`;
+        postNavigate(`${window.BASE_PATH}/delete_back/${backId}`);
     }
 }
 

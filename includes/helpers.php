@@ -1,5 +1,18 @@
 <?php
 
+// Зареждат се и оттук, за да работи кодът и със стар/сървърен config.php
+// (config.php е изключен от SFTP качването в .vscode/sftp.json).
+require_once __DIR__ . '/session.php';
+require_once __DIR__ . '/security.php';
+require_once __DIR__ . '/reports.php';
+require_once __DIR__ . '/workflow.php';
+require_once __DIR__ . '/customers.php';
+require_once __DIR__ . '/notifications.php';
+
+configure_error_display();
+harden_session_cookie();
+send_security_headers();
+
 function url_for(string $route, array $params = []): string
 {
     $routes = [
@@ -17,6 +30,9 @@ function url_for(string $route, array $params = []): string
         'backs' => '/backs',
         'hanging' => '/hanging',
         'services' => '/services',
+        'used_materials' => '/used_materials',
+        'reminders' => '/reminders',
+        'customers' => '/customers',
         'add_back' => '/add_back',
         'add_hanging' => '/add_hanging',
         'submit_feedback' => '/submit_feedback',
@@ -86,18 +102,58 @@ function is_authenticated(): bool
 function require_login(): void
 {
     if (!is_authenticated()) {
+        if (is_json_request()) {
+            json_response(['authenticated' => false, 'error' => 'session_expired'], 401);
+        }
         redirect('/login');
     }
 }
 
 function login_user(User $user): void
 {
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        session_regenerate_id(true);
+    }
     $_SESSION['user_id'] = $user->id;
+    $_SESSION['last_activity'] = time();
+    unset($_SESSION['session_expired']);
 }
 
 function logout_user(): void
 {
-    unset($_SESSION['user_id']);
+    unset($_SESSION['user_id'], $_SESSION['last_activity']);
+}
+
+/**
+ * Проверка за наличност преди запис. При недостиг поръчката продължава само с потвърждение
+ * „Материалът е наличен“ — тогава се маркира и липсващото количество се записва за проверка на склада.
+ *
+ * @return bool false — поръчката не се записва (няма потвърждение)
+ */
+function apply_stock_shortage_confirmation(PDO $conn, array &$order, array $post, ?array $previousOrder = null): bool
+{
+    $shortages = find_order_stock_shortages($conn, $order['stock_order'], $previousOrder);
+    if ($shortages === []) {
+        $order['stock_override'] = 0;
+        $order['stock_shortage'] = null;
+
+        return true;
+    }
+
+    if (empty($post['stock_confirmed'])) {
+        flash(
+            'Недостатъчна наличност: ' . format_stock_shortage_summary($shortages)
+            . '. Поръчката не е записана — потвърдете „Материалът е наличен“, ако колегите могат да я изпълнят.',
+            'warning'
+        );
+
+        return false;
+    }
+
+    $order['stock_override'] = 1;
+    $order['stock_shortage'] = json_encode($shortages, JSON_UNESCAPED_UNICODE);
+
+    return true;
 }
 
 function render(string $template, array $data = []): void
@@ -113,7 +169,7 @@ function render(string $template, array $data = []): void
 
     ob_start();
     include ROOT_PATH . '/templates/' . $template;
-    $content = ob_get_clean();
+    $content = inject_csrf_fields((string)ob_get_clean());
 
     include ROOT_PATH . '/templates/layout.php';
 }
@@ -169,7 +225,7 @@ function normalize_passepartout_use(?string $use): string
 function passepartout_use_form_options(): array
 {
     return [
-        'passepartout' => 'Паспарту (слой 1, 2… надолу)',
+        'passepartout' => 'Паспарту',
         'background' => 'Само фон',
         'both' => 'Паспарту + фон',
     ];
@@ -179,6 +235,7 @@ function artwork_type_options(): array
 {
     return [
         '' => '—',
+        'watercolor' => 'Акварел',
         'graphics' => 'Графика',
         'oil_acrylic' => 'Масло, акрил',
         'pastel' => 'Пастел',
@@ -352,7 +409,9 @@ function short_glass(?string $value): string
 {
     $mapping = [
         'Антирефлексно' => 'Анти',
+        'Антирефлексен плексиглас' => 'Анти плекс',
         'Нормално' => 'Норм',
+        'Нормално 2 мм' => 'Норм',
         'Музейно' => 'Музейно',
         'Консервационно' => 'Конс',
         'Огледало' => 'Огледало',
@@ -404,19 +463,64 @@ function order_has_extras(array $order): bool
         || !empty($order['frame_nonstandard'])
         || !empty($order['frame_high_complexity'])
         || !empty($order['client_passepartout_cutting'])
+        || (float)($order['complex_order_percent'] ?? 0) > 0
         || $frameShape !== ''
         || $openings > 1
         || $transportKm > 0
         || !empty($order['profile_ready_frame'])
+        || trim((string)($order['subframe_thickness'] ?? '')) !== ''
         || count($serviceIds) > 0;
+}
+
+/** „Допълнителни услуги“ (секцията от ценоразписа) — за индикацията ДА/НЕ в списъка. */
+function order_has_additional_services(array $order): bool
+{
+    return count(parse_extra_service_ids($order['extra_services'] ?? '[]')) > 0
+        || trim((string)($order['subframe_thickness'] ?? '')) !== ''
+        || trim((string)($order['spacer_profile'] ?? '')) !== ''
+        || (float)($order['box_subframe_gap_cm'] ?? 0) > 0
+        || trim((string)($order['canvas_support_note'] ?? '')) !== '';
+}
+
+function order_has_description(array $order): bool
+{
+    return trim((string)($order['description'] ?? '')) !== '';
+}
+
+function format_cm_number($value): string
+{
+    return rtrim(rtrim(number_format((float)$value, 2, '.', ''), '0'), '.');
+}
+
+function format_four_sides_label(array $sides): string
+{
+    [$l, $r, $t, $b] = $sides;
+    if ($l == $r && $r == $t && $t == $b) {
+        return 'по ' . format_cm_number($l) . ' см отвсякъде';
+    }
+
+    return sprintf(
+        'Л %s, Д %s, Г %s, Дол %s см',
+        format_cm_number($l),
+        format_cm_number($r),
+        format_cm_number($t),
+        format_cm_number($b)
+    );
 }
 
 function format_order_extras_labels(array $order, array $servicesById = []): array
 {
     $labels = [];
 
-    if (!empty($order['urgent'])) {
-        $labels[] = 'Спешна';
+    $urgent = (int)($order['urgent'] ?? 0);
+    if ($urgent === 1) {
+        $labels[] = 'Спешна за същия ден';
+    } elseif ($urgent === 2) {
+        $labels[] = 'Спешна за следващия ден';
+    }
+    $complexPercent = (float)($order['complex_order_percent'] ?? 0);
+    if ($complexPercent > 0) {
+        $labels[] = 'Сложна поръчка +' . format_cm_number($complexPercent) . '%';
     }
     if (!empty($order['student_discount'])) {
         $labels[] = 'Ученик';
@@ -428,20 +532,18 @@ function format_order_extras_labels(array $order, array $servicesById = []): arr
         $labels[] = 'Рамка кутия';
     }
     if (!empty($order['frame_nonstandard'])) {
-        $labels[] = 'Нестандартна рамка';
+        $labels[] = 'Нестандартна изработка';
     }
     if (!empty($order['frame_high_complexity'])) {
         $labels[] = 'Висока сложност';
     }
     if (!empty($order['client_passepartout_cutting'])) {
-        $labels[] = 'Рязане паспарту на клиент';
+        $labels[] = 'Рязане на паспарту на клиент';
     }
 
-    $frameShape = $order['frame_shape'] ?? '';
-    if ($frameShape === 'ellipse_12') {
-        $labels[] = 'Елипса / кръг 12 страни';
-    } elseif ($frameShape === 'circle_24') {
-        $labels[] = 'Кръг 24 страни';
+    $shapeLabel = frame_shape_label($order['frame_shape'] ?? '');
+    if ($shapeLabel !== '') {
+        $labels[] = 'Фигура: ' . $shapeLabel;
     }
 
     $openings = (int)($order['passepartout_openings'] ?? 1);
@@ -451,20 +553,45 @@ function format_order_extras_labels(array $order, array $servicesById = []): arr
 
     $transportKm = (float)($order['transport_km'] ?? 0);
     if ($transportKm > 0) {
-        $labels[] = 'Транспорт ' . rtrim(rtrim(number_format($transportKm, 2, '.', ''), '0'), '.') . ' км';
+        $labels[] = 'Транспорт ' . format_cm_number($transportKm) . ' км';
     }
 
     if (!empty($order['profile_ready_frame'])) {
         $price = (float)($order['profile_ready_frame_price'] ?? 0);
         $labels[] = $price > 0
-            ? 'Готова рамка (' . rtrim(rtrim(number_format($price, 2, '.', ''), '0'), '.') . ' €/бр.)'
+            ? 'Готова рамка (' . format_cm_number($price) . ' €/бр.)'
             : 'Готова рамка';
     }
 
-    foreach (parse_extra_service_ids($order['extra_services'] ?? '[]') as $serviceId) {
-        if (isset($servicesById[$serviceId])) {
-            $labels[] = $servicesById[$serviceId];
+    $thickness = trim((string)($order['subframe_thickness'] ?? ''));
+    if ($thickness !== '') {
+        $label = 'Подрамка ' . $thickness . ' см';
+        if ($order['subframe_manual_price'] ?? null) {
+            $label .= ' (договорена ' . format_cm_number($order['subframe_manual_price']) . ' €)';
         }
+        $labels[] = $label;
+    }
+
+    $manualPrices = parse_extra_services_manual_prices($order['extra_services_manual'] ?? null);
+    foreach (parse_extra_service_ids($order['extra_services'] ?? '[]') as $serviceId) {
+        if (!isset($servicesById[$serviceId])) {
+            continue;
+        }
+        $label = $servicesById[$serviceId];
+        if (isset($manualPrices[$serviceId])) {
+            $label .= ' (' . format_cm_number($manualPrices[$serviceId]) . ' €)';
+        }
+        if (str_contains($label, 'дистанционер на рамка') && trim((string)($order['spacer_profile'] ?? '')) !== '') {
+            $label .= ' — ' . trim($order['spacer_profile']);
+        }
+        $labels[] = $label;
+    }
+
+    if ((float)($order['box_subframe_gap_cm'] ?? 0) > 0) {
+        $labels[] = 'Разстояние каса–подрамка ' . format_cm_number($order['box_subframe_gap_cm']) . ' см';
+    }
+    if (trim((string)($order['canvas_support_note'] ?? '')) !== '') {
+        $labels[] = 'Подложка: ' . trim($order['canvas_support_note']);
     }
 
     return $labels;
@@ -490,48 +617,33 @@ function profile_type_labels(): array
     ];
 }
 
-/** @return 'wood'|'plastic_metal'|null */
+/** @return 'metal'|'plastic'|'wood'|null */
 function order_workload_workshop_bucket(array $order, array $profileTypeByName): ?string
 {
     $profileName = trim($order['profile'] ?? '');
     if ($profileName === '') {
-        if (!empty($order['profile_ready_frame'])) {
-            return 'plastic_metal';
-        }
-
-        return null;
+        // Готова рамка без профил от склада — броим я при пластмасовите (както досега в „пл.+м.“).
+        return !empty($order['profile_ready_frame']) ? 'plastic' : null;
     }
 
     $profileType = $profileTypeByName[$profileName] ?? 'wood';
 
-    return in_array($profileType, ['metal', 'plastic', 'client_material'], true)
-        ? 'plastic_metal'
-        : 'wood';
+    return match ($profileType) {
+        'metal' => 'metal',
+        'plastic', 'client_material' => 'plastic',
+        default => 'wood',
+    };
 }
 
-function order_workload_metal_multiplier(): int
+/** Брой паспартута (слоеве паспарту без фона) × брой рамки. */
+function order_workload_passepartout_count(array $order): int
 {
-    return 2;
-}
+    $layers = array_filter(
+        order_material_layers($order),
+        static fn (array $layer): bool => $layer['role'] === 'passepartout' && $layer['name'] !== ''
+    );
 
-function order_workload_load_units(array $order, array $profileTypeByName, string $bucket): int
-{
-    $pieces = max(1, (int)($order['frame_count'] ?? 1));
-    if ($bucket !== 'plastic_metal') {
-        return $pieces;
-    }
-
-    $profileName = trim($order['profile'] ?? '');
-    if ($profileName === '') {
-        return $pieces;
-    }
-
-    $profileType = $profileTypeByName[$profileName] ?? 'wood';
-    if ($profileType === 'metal') {
-        return $pieces * order_workload_metal_multiplier();
-    }
-
-    return $pieces;
+    return count($layers) * max(1, (int)($order['frame_count'] ?? 1));
 }
 
 function build_profile_type_by_name(PDO $conn): array
@@ -548,7 +660,8 @@ function painting_reservation_workshop_groups(): array
 {
     return [
         'unknown' => 'Още не е ясно',
-        'plastic_metal' => 'Пластмаса + метал',
+        'metal' => 'Метал',
+        'plastic' => 'Пластмаса',
         'wood' => 'Дърво',
     ];
 }
@@ -556,6 +669,9 @@ function painting_reservation_workshop_groups(): array
 function painting_reservation_allowed_workshop(?string $group): string
 {
     $groups = painting_reservation_workshop_groups();
+    if ($group === 'plastic_metal') {
+        return 'plastic_metal'; // стари резервации
+    }
 
     return isset($groups[$group ?? '']) ? ($group ?? 'unknown') : 'unknown';
 }
@@ -636,28 +752,30 @@ function process_delete_painting_reservation_submission(PDO $conn, int $id): voi
     }
 }
 
+/**
+ * Брой приети рамки по ден на получаване: метални, пластмасови, дървени, паспартута + резервации.
+ */
 function build_order_workload_chart(PDO $conn, array $orders, int $futureDays = 14): array
 {
     $profileTypeByName = build_profile_type_by_name($conn);
-    $woodPieces = [];
-    $plasticMetalPieces = [];
+    $counts = ['metal' => [], 'plastic' => [], 'wood' => [], 'passepartout' => []];
 
     foreach ($orders as $order) {
         $pickupDate = trim($order['date'] ?? '');
-        if ($pickupDate === '') {
+        if ($pickupDate === '' || !empty($order['ready'])) {
+            // Готовите поръчки вече не натоварват цеха.
             continue;
         }
 
+        $pieces = max(1, (int)($order['frame_count'] ?? 1));
         $bucket = order_workload_workshop_bucket($order, $profileTypeByName);
-        if ($bucket === null) {
-            continue;
+        if ($bucket !== null) {
+            $counts[$bucket][$pickupDate] = ($counts[$bucket][$pickupDate] ?? 0) + $pieces;
         }
 
-        $load = order_workload_load_units($order, $profileTypeByName, $bucket);
-        if ($bucket === 'wood') {
-            $woodPieces[$pickupDate] = ($woodPieces[$pickupDate] ?? 0) + $load;
-        } else {
-            $plasticMetalPieces[$pickupDate] = ($plasticMetalPieces[$pickupDate] ?? 0) + $load;
+        $ppCount = order_workload_passepartout_count($order);
+        if ($ppCount > 0) {
+            $counts['passepartout'][$pickupDate] = ($counts['passepartout'][$pickupDate] ?? 0) + $ppCount;
         }
     }
 
@@ -675,8 +793,10 @@ function build_order_workload_chart(PDO $conn, array $orders, int $futureDays = 
             'label' => $dt->format('d/m'),
             'weekday' => $weekdayLabels[(int)$dt->format('w')],
             'is_today' => $i === 0,
-            'plastic_metal' => (int)($plasticMetalPieces[$iso] ?? 0),
-            'wood' => (int)($woodPieces[$iso] ?? 0),
+            'metal' => (int)($counts['metal'][$iso] ?? 0),
+            'plastic' => (int)($counts['plastic'][$iso] ?? 0),
+            'wood' => (int)($counts['wood'][$iso] ?? 0),
+            'passepartout' => (int)($counts['passepartout'][$iso] ?? 0),
             'reserved_unknown' => 0,
             'reservations' => [],
         ];
@@ -691,7 +811,7 @@ function build_order_workload_chart(PDO $conn, array $orders, int $futureDays = 
             $dayIndexByDate[$day['date']] = $idx;
         }
 
-        $workshopLabels = painting_reservation_workshop_groups();
+        $workshopLabels = painting_reservation_workshop_groups() + ['plastic_metal' => 'Пластмаса + метал'];
         foreach ($reservations as $reservation) {
             $pickupDate = trim($reservation['pickup_date'] ?? '');
             if (!isset($dayIndexByDate[$pickupDate])) {
@@ -702,11 +822,10 @@ function build_order_workload_chart(PDO $conn, array $orders, int $futureDays = 
             $count = max(1, (int)($reservation['painting_count'] ?? 1));
             $workshop = painting_reservation_allowed_workshop($reservation['workshop_group'] ?? 'unknown');
 
-            if ($workshop === 'wood') {
-                $days[$idx]['wood'] += $count;
-            } elseif ($workshop === 'plastic_metal') {
-                $days[$idx]['plastic_metal'] += $count;
+            if (in_array($workshop, ['metal', 'plastic', 'wood'], true)) {
+                $days[$idx][$workshop] += $count;
             } else {
+                // „Още не е ясно“ и старите „Пластмаса + метал“ остават на реда за запазени.
                 $days[$idx]['reserved_unknown'] += $count;
             }
 
@@ -723,19 +842,47 @@ function build_order_workload_chart(PDO $conn, array $orders, int $futureDays = 
 
     $maxCount = 0;
     foreach ($days as $day) {
-        $maxCount = max($maxCount, $day['plastic_metal'], $day['wood'], $day['reserved_unknown']);
+        $maxCount = max($maxCount, $day['metal'], $day['plastic'], $day['wood'], $day['passepartout'], $day['reserved_unknown']);
     }
 
     return [
         'days' => $days,
         'max' => max(1, $maxCount),
-        'total_plastic_metal' => array_sum(array_column($days, 'plastic_metal')),
+        'total_metal' => array_sum(array_column($days, 'metal')),
+        'total_plastic' => array_sum(array_column($days, 'plastic')),
         'total_wood' => array_sum(array_column($days, 'wood')),
+        'total_passepartout' => array_sum(array_column($days, 'passepartout')),
     ];
+}
+
+function services_name_map(): array
+{
+    static $map = null;
+    if ($map === null) {
+        $map = array_column(get_all_services(get_db_connection()), 'name', 'id');
+    }
+
+    return $map;
+}
+
+/** Описание на слоевете паспарту/фон с отстоянията — за прегледа на поръчката. */
+function format_order_material_layers_label(array $order): string
+{
+    $parts = [];
+    foreach (order_material_layers($order) as $layer) {
+        $name = $layer['name'] !== '' ? $layer['name'] : '(без №)';
+        $role = $layer['role'] === 'background' ? 'фон' : 'паспарту';
+        $offsets = $layer['offsets'] !== [0.0, 0.0, 0.0, 0.0] ? ' — ' . format_four_sides_label($layer['offsets']) : '';
+        $parts[] = "{$role} {$name}{$offsets}";
+    }
+
+    return implode('; ', $parts);
 }
 
 function order_view_data(array $order): array
 {
+    $fieldSides = order_field_margins($order);
+
     return [
         'order_number' => (int)$order['order_number'],
         'sub_order_number' => (int)$order['sub_order_number'],
@@ -765,15 +912,25 @@ function order_view_data(array $order): array
         'description' => $order['description'] ?? '',
         'paid' => (bool)$order['paid'],
         'collected' => (bool)$order['collected'],
+        'ready' => (bool)($order['ready'] ?? false) || (bool)$order['collected'],
+        'ready_at' => $order['ready_at'] ?? null,
+        'customer_id' => isset($order['customer_id']) ? (int)$order['customer_id'] : null,
+        'customer_email' => $order['customer_email'] ?? '',
+        'amount_due' => order_amount_due($order),
         'passepartout_openings' => $order['passepartout_openings'] ?? 1,
-        'urgent' => (bool)($order['urgent'] ?? false),
+        'urgent' => (int)($order['urgent'] ?? 0),
+        'complex_order_percent' => $order['complex_order_percent'] ?? null,
         'student_discount' => (bool)($order['student_discount'] ?? false),
         'complex_passepartout' => (bool)($order['complex_passepartout'] ?? false),
         'extra_services' => $order['extra_services'] ?? '[]',
+        'extra_services_manual' => $order['extra_services_manual'] ?? null,
         'transport_km' => $order['transport_km'] ?? '',
         'frame_box' => (bool)($order['frame_box'] ?? false),
         'frame_nonstandard' => (bool)($order['frame_nonstandard'] ?? false),
         'frame_shape' => $order['frame_shape'] ?? '',
+        'frame_shape_label' => frame_shape_label($order['frame_shape'] ?? ''),
+        'frame_measure' => $order['frame_measure'] ?? '',
+        'frame_measure_label' => frame_measure_options()[$order['frame_measure'] ?? ''] ?? '',
         'frame_high_complexity' => (bool)($order['frame_high_complexity'] ?? false),
         'client_passepartout_cutting' => (bool)($order['client_passepartout_cutting'] ?? false),
         'artwork_type' => $order['artwork_type'] ?? '',
@@ -782,10 +939,29 @@ function order_view_data(array $order): array
         'passepartout_margin_r' => $order['passepartout_margin_r'] ?? null,
         'passepartout_margin_t' => $order['passepartout_margin_t'] ?? null,
         'passepartout_margin_b' => $order['passepartout_margin_b'] ?? null,
+        'field_margin_all' => $order['field_margin_all'] ?? null,
+        'field_margin_l' => $order['field_margin_l'] ?? null,
+        'field_margin_r' => $order['field_margin_r'] ?? null,
+        'field_margin_t' => $order['field_margin_t'] ?? null,
+        'field_margin_b' => $order['field_margin_b'] ?? null,
+        'field_label' => $fieldSides !== [0.0, 0.0, 0.0, 0.0] ? format_four_sides_label($fieldSides) : '',
+        'passepartout_layers' => decode_json_array($order['passepartout_layers'] ?? null),
+        'passepartout_bg_offsets' => decode_json_array($order['passepartout_bg_offsets'] ?? null),
+        'material_layers_label' => format_order_material_layers_label($order),
         'hanger' => $order['hanger'] ?? '',
+        'hanger_count' => $order['hanger_count'] ?? null,
         'carry_floors' => $order['carry_floors'] ?? null,
         'additional_passepartouts' => $order['additional_passepartouts'] ?? null,
         'passepartout_reveal_cm' => $order['passepartout_reveal_cm'] ?? null,
+        'subframe_thickness' => $order['subframe_thickness'] ?? '',
+        'subframe_manual_price' => $order['subframe_manual_price'] ?? null,
+        'spacer_profile' => $order['spacer_profile'] ?? '',
+        'box_subframe_gap_cm' => $order['box_subframe_gap_cm'] ?? null,
+        'canvas_support_note' => $order['canvas_support_note'] ?? '',
+        'stock_override' => (bool)($order['stock_override'] ?? false),
+        'stock_shortage' => decode_json_array($order['stock_shortage'] ?? null),
+        'has_additional_services' => order_has_additional_services($order),
+        'extras_labels' => format_order_extras_labels($order, services_name_map()),
     ];
 }
 
@@ -1366,18 +1542,116 @@ function parse_optional_margin_cm(?string $value): ?float
     return max(0, (float)str_replace(',', '.', $value));
 }
 
+function post_four_sides(array $post, string $prefix, ?int $index = null): array
+{
+    $pick = static function (string $key) use ($post, $index) {
+        $value = $post[$key] ?? null;
+        if ($index !== null) {
+            $value = is_array($value) ? ($value[$index] ?? null) : null;
+        }
+        $parsed = parse_cm_value(is_array($value) ? null : $value);
+
+        return $parsed;
+    };
+
+    return [
+        'all' => $pick($prefix . 'all'),
+        'l' => $pick($prefix . 'l'),
+        'r' => $pick($prefix . 'r'),
+        't' => $pick($prefix . 't'),
+        'b' => $pick($prefix . 'b'),
+    ];
+}
+
+function four_sides_has_value(array $sides): bool
+{
+    foreach (['all', 'l', 'r', 't', 'b'] as $key) {
+        if (($sides[$key] ?? null) !== null) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/** Слоеве паспарту от формата: № + отстояния (отвсякъде / Л / Д / Г / Д). */
+function passepartout_layers_entries_from_post(array $post): array
+{
+    $use = normalize_passepartout_use($post['passepartout_use'] ?? '') ?: 'passepartout';
+    if ($use === 'background') {
+        return [];
+    }
+
+    $names = [trim((string)($post['passepartout'] ?? ''))];
+    $additional = $post['additional_passepartouts'] ?? [];
+    if (is_array($additional)) {
+        foreach ($additional as $name) {
+            $names[] = trim((string)$name);
+        }
+    }
+
+    $entries = [];
+    foreach ($names as $index => $name) {
+        $sides = post_four_sides($post, 'pp_', $index);
+        if ($name === '' && !four_sides_has_value($sides)) {
+            continue;
+        }
+        $entries[] = array_merge(['name' => $name], $sides);
+    }
+
+    return $entries;
+}
+
+function background_offsets_from_post(array $post): ?array
+{
+    $use = normalize_passepartout_use($post['passepartout_use'] ?? '') ?: 'passepartout';
+    if ($use === 'passepartout') {
+        return null;
+    }
+    $sides = post_four_sides($post, 'bg_');
+
+    return four_sides_has_value($sides) ? $sides : null;
+}
+
+function extra_services_manual_from_post(array $post, array $serviceIds): ?string
+{
+    $raw = $post['extra_services_manual'] ?? [];
+    if (!is_array($raw)) {
+        return null;
+    }
+    $prices = [];
+    foreach ($raw as $id => $value) {
+        $id = (int)$id;
+        $price = parse_cm_value($value);
+        if ($id > 0 && $price !== null && in_array($id, $serviceIds, true)) {
+            $prices[(string)$id] = round($price, 2);
+        }
+    }
+
+    return $prices !== [] ? json_encode($prices) : null;
+}
+
+function allowed_frame_shape(?string $shape): string
+{
+    $shape = trim((string)$shape);
+    if ($shape === 'circle_24') {
+        return $shape; // стари поръчки
+    }
+
+    return array_key_exists($shape, frame_shape_options()) ? $shape : '';
+}
+
 function build_order_from_post(?string $customerName = null, ?string $customerPhone = null): array
 {
     $post = $_POST;
     $conn = get_db_connection();
     $ppUse = infer_passepartout_use_from_post($post);
-    $passepartoutZero = $ppUse !== 'background' && !empty($post['passepartout_zero']);
-    $passepartoutName = $passepartoutZero ? '' : trim($post['passepartout'] ?? '');
+    $passepartoutName = trim($post['passepartout'] ?? '');
     $ppLayers = passepartout_layers_from_post($post);
     $passepartoutBackgroundName = $ppUse === 'both' ? $ppLayers['background'] : '';
 
     $passepartoutId = null;
-    if (!$passepartoutZero && $passepartoutName !== '') {
+    if ($passepartoutName !== '') {
         $resolved = get_catalog_item_by_name($conn, 'passepartouts', $passepartoutName);
         $passepartoutId = $resolved ? (int)$resolved['id'] : null;
     }
@@ -1392,11 +1666,22 @@ function build_order_from_post(?string $customerName = null, ?string $customerPh
     if (!is_array($extraServices)) {
         $extraServices = [];
     }
+    $extraServiceIds = array_values(array_filter(array_map('intval', $extraServices)));
 
     $artworkType = trim($post['artwork_type'] ?? '');
     if (!array_key_exists($artworkType, artwork_type_options())) {
         $artworkType = $artworkType === '' ? '' : 'other';
     }
+
+    $layerEntries = passepartout_layers_entries_from_post($post);
+    $bgOffsets = background_offsets_from_post($post);
+    $urgent = (int)($post['urgent'] ?? 0);
+    $hanger = trim($post['hanger'] ?? '');
+    $subframeThickness = trim((string)($post['subframe_thickness'] ?? ''));
+    if (!array_key_exists($subframeThickness, subframe_thickness_options())) {
+        $subframeThickness = '';
+    }
+    $supportNote = trim((string)($post['canvas_support_note'] ?? ''));
 
     return [
         'width' => $post['width'] ?? null,
@@ -1407,20 +1692,28 @@ function build_order_from_post(?string $customerName = null, ?string $customerPh
         'passepartout_id' => $passepartoutId,
         'passepartout_background' => $passepartoutBackgroundName,
         'passepartout_background_id' => $passepartoutBackgroundId,
+        'passepartout_layers' => $layerEntries !== [] ? json_encode($layerEntries, JSON_UNESCAPED_UNICODE) : null,
+        'passepartout_bg_offsets' => $bgOffsets !== null ? json_encode($bgOffsets) : null,
         'back' => trim($post['back'] ?? ''),
         'hanging' => trim($post['hanging'] ?? ''),
-        'hanger' => trim($post['hanger'] ?? ''),
+        'hanger' => $hanger,
+        'hanger_count' => $hanger !== '' && ($post['hanger_count'] ?? '') !== '' ? max(0, (int)$post['hanger_count']) : null,
         'weight_kg' => ($post['weight_kg'] ?? '') !== '' ? max(0, (float)$post['weight_kg']) : null,
         'passepartout_openings' => max(1, (int)($post['passepartout_openings'] ?? 1)),
-        'urgent' => isset($post['urgent']) ? 1 : 0,
-        'student_discount' => isset($post['student_discount']) ? 1 : 0,
+        'urgent' => in_array($urgent, [0, 1, 2], true) ? $urgent : 0,
+        'complex_order_percent' => ($post['complex_order_percent'] ?? '') !== ''
+            ? max(0, min(100, (float)str_replace(',', '.', (string)$post['complex_order_percent'])))
+            : null,
+        'student_discount' => 0,
         'complex_passepartout' => isset($post['complex_passepartout']) ? 1 : 0,
-        'extra_services' => json_encode(array_values(array_map('intval', $extraServices))),
-        'transport_km' => ($post['transport_km'] ?? '') !== '' ? (float)$post['transport_km'] : null,
-        'carry_floors' => ($post['carry_floors'] ?? '') !== '' ? max(0, (int)$post['carry_floors']) : null,
+        'extra_services' => json_encode($extraServiceIds),
+        'extra_services_manual' => extra_services_manual_from_post($post, $extraServiceIds),
+        'transport_km' => null,
+        'carry_floors' => null,
         'frame_box' => isset($post['frame_box']) ? 1 : 0,
         'frame_nonstandard' => isset($post['frame_nonstandard']) ? 1 : 0,
-        'frame_shape' => in_array($post['frame_shape'] ?? '', ['ellipse_12', 'circle_24'], true) ? $post['frame_shape'] : '',
+        'frame_shape' => allowed_frame_shape($post['frame_shape'] ?? ''),
+        'frame_measure' => in_array($post['frame_measure'] ?? '', ['clear', 'outer'], true) ? $post['frame_measure'] : '',
         'frame_high_complexity' => isset($post['frame_high_complexity']) ? 1 : 0,
         'client_passepartout_cutting' => isset($post['client_passepartout_cutting']) ? 1 : 0,
         'profile_ready_frame' => isset($post['profile_ready_frame']) ? 1 : 0,
@@ -1429,15 +1722,25 @@ function build_order_from_post(?string $customerName = null, ?string $customerPh
             : null,
         'manual_discount' => ($post['discount'] ?? '') !== '' ? max(0, min(100, (float)$post['discount'])) : 0,
         'passepartout_use' => $ppUse,
-        'passepartout_zero' => $passepartoutZero ? 1 : 0,
-        'passepartout_margin_l' => parse_optional_margin_cm($post['passepartout_margin_l'] ?? null),
-        'passepartout_margin_r' => parse_optional_margin_cm($post['passepartout_margin_r'] ?? null),
-        'passepartout_margin_t' => parse_optional_margin_cm($post['passepartout_margin_t'] ?? null),
-        'passepartout_margin_b' => parse_optional_margin_cm($post['passepartout_margin_b'] ?? null),
+        'passepartout_zero' => 0,
+        'passepartout_margin_l' => null,
+        'passepartout_margin_r' => null,
+        'passepartout_margin_t' => null,
+        'passepartout_margin_b' => null,
+        'field_margin_all' => parse_cm_value($post['field_margin_all'] ?? null),
+        'field_margin_l' => parse_cm_value($post['field_margin_l'] ?? null),
+        'field_margin_r' => parse_cm_value($post['field_margin_r'] ?? null),
+        'field_margin_t' => parse_cm_value($post['field_margin_t'] ?? null),
+        'field_margin_b' => parse_cm_value($post['field_margin_b'] ?? null),
+        'subframe_thickness' => $subframeThickness,
+        'subframe_manual_price' => $subframeThickness !== '' ? parse_cm_value($post['subframe_manual_price'] ?? null) : null,
+        'spacer_profile' => trim((string)($post['spacer_profile'] ?? '')) ?: null,
+        'box_subframe_gap_cm' => parse_cm_value($post['box_subframe_gap_cm'] ?? null),
+        'canvas_support_note' => $supportNote !== '' ? mb_substr($supportNote, 0, 80, 'UTF-8') : null,
         'artwork_type' => $artworkType,
         'additional_profiles' => get_additional_profiles(),
         'additional_passepartouts' => get_additional_passepartouts(),
-        'passepartout_reveal_cm' => encode_passepartout_reveals_from_post($post),
+        'passepartout_reveal_cm' => null,
         'frame_count' => max(1, (int)($post['frame_count'] ?? 1)),
         'customer_name' => $customerName ?? ($post['customer_name'] ?? ''),
         'customer_phone' => $customerPhone ?? trim($post['customer_phone'] ?? ''),
@@ -1455,109 +1758,69 @@ function resolve_order_price(PDO $conn, array $order, ?string $postedPrice): ?fl
     return $pricing['total'] > 0 ? $pricing['total'] : null;
 }
 
-function order_bind_values(array $order): array
+/** Колони на orders, които се записват при добавяне/редакция (без order_number/sub_order_number). */
+function order_persisted_columns(): array
 {
     return [
-        $order['date'],
-        $order['accepted_date'],
-        $order['width'],
-        $order['height'],
-        $order['profile'],
-        $order['glass'],
-        $order['passepartout'],
-        $order['passepartout_bill_width'],
-        $order['passepartout_bill_height'],
-        $order['passepartout_sheet_type_id'],
-        $order['passepartout_sheet_usage'],
-        $order['passepartout_use'] ?? '',
-        $order['passepartout_background'] ?? '',
-        $order['passepartout_bg_sheet_type_id'] ?? null,
-        $order['passepartout_bg_sheet_usage'] ?? null,
-        $order['back'],
-        $order['hanging'],
-        $order['weight_kg'],
-        $order['customer_name'],
-        $order['customer_phone'],
-        $order['price'],
-        $order['paid'],
-        $order['collected'],
-        $order['additional_profiles'],
-        $order['frame_count'],
-        $order['advance_payment'],
-        $order['discount'],
-        $order['description'],
-        $order['passepartout_openings'],
-        $order['urgent'],
-        $order['student_discount'],
-        $order['complex_passepartout'],
-        $order['extra_services'],
-        $order['transport_km'],
-        $order['frame_box'],
-        $order['frame_nonstandard'],
-        $order['frame_shape'],
-        $order['frame_high_complexity'],
-        $order['client_passepartout_cutting'],
-        $order['profile_ready_frame'] ?? 0,
-        $order['profile_ready_frame_price'] ?? null,
-        $order['artwork_type'] ?? '',
-        $order['passepartout_zero'] ?? 0,
-        $order['passepartout_margin_l'] ?? null,
-        $order['passepartout_margin_r'] ?? null,
-        $order['passepartout_margin_t'] ?? null,
-        $order['passepartout_margin_b'] ?? null,
-        $order['hanger'] ?? '',
-        $order['carry_floors'] ?? null,
-        $order['additional_passepartouts'] ?? null,
-        $order['passepartout_reveal_cm'] ?? null,
+        'date', 'accepted_date', 'width', 'height', 'profile', 'glass', 'passepartout',
+        'passepartout_bill_width', 'passepartout_bill_height',
+        'passepartout_sheet_type_id', 'passepartout_sheet_usage', 'passepartout_use',
+        'passepartout_background', 'passepartout_bg_sheet_type_id', 'passepartout_bg_sheet_usage',
+        'back', 'hanging', 'weight_kg', 'customer_name', 'customer_phone', 'price', 'paid', 'collected',
+        'additional_profiles', 'frame_count', 'advance_payment', 'discount', 'description',
+        'passepartout_openings', 'urgent', 'student_discount', 'complex_passepartout', 'extra_services', 'transport_km',
+        'frame_box', 'frame_nonstandard', 'frame_shape', 'frame_high_complexity', 'client_passepartout_cutting',
+        'profile_ready_frame', 'profile_ready_frame_price',
+        'artwork_type', 'passepartout_zero', 'passepartout_margin_l', 'passepartout_margin_r',
+        'passepartout_margin_t', 'passepartout_margin_b', 'hanger', 'carry_floors',
+        'additional_passepartouts', 'passepartout_reveal_cm',
+        'frame_measure', 'field_margin_all', 'field_margin_l', 'field_margin_r', 'field_margin_t', 'field_margin_b',
+        'passepartout_layers', 'passepartout_bg_offsets', 'hanger_count', 'extra_services_manual',
+        'subframe_thickness', 'subframe_manual_price', 'spacer_profile', 'box_subframe_gap_cm',
+        'canvas_support_note', 'complex_order_percent', 'stock_override', 'stock_shortage',
+        'ready', 'ready_at', 'paid_at', 'collected_at', 'customer_id', 'customer_email', 'passepartout_extra_stock',
     ];
+}
+
+function order_column_default(string $column)
+{
+    return match ($column) {
+        'paid', 'collected', 'urgent', 'student_discount', 'complex_passepartout', 'frame_box',
+        'frame_nonstandard', 'frame_high_complexity', 'client_passepartout_cutting', 'profile_ready_frame',
+        'passepartout_zero', 'stock_override', 'ready' => 0,
+        'passepartout_use', 'passepartout_background', 'frame_shape', 'frame_measure', 'subframe_thickness',
+        'hanger', 'artwork_type' => '',
+        'passepartout_openings', 'frame_count' => 1,
+        default => null,
+    };
+}
+
+function order_bind_values(array $order): array
+{
+    $values = [];
+    foreach (order_persisted_columns() as $column) {
+        $values[] = array_key_exists($column, $order) ? $order[$column] : order_column_default($column);
+    }
+
+    return $values;
 }
 
 function insert_order_row(PDO $conn, array $order, int $orderNumber, int $subOrderNumber): void
 {
-    $stmt = $conn->prepare('
-        INSERT INTO orders (
-            order_number, sub_order_number, date, accepted_date, width, height, profile, glass, passepartout,
-            passepartout_bill_width, passepartout_bill_height,
-            passepartout_sheet_type_id, passepartout_sheet_usage, passepartout_use,
-            passepartout_background, passepartout_bg_sheet_type_id, passepartout_bg_sheet_usage,
-            back, hanging, weight_kg, customer_name, customer_phone, price, paid, collected,
-            additional_profiles, frame_count, advance_payment, discount, description,
-            passepartout_openings, urgent, student_discount, complex_passepartout, extra_services, transport_km,
-            frame_box, frame_nonstandard, frame_shape, frame_high_complexity, client_passepartout_cutting,
-            profile_ready_frame, profile_ready_frame_price,
-            artwork_type, passepartout_zero, passepartout_margin_l, passepartout_margin_r,
-            passepartout_margin_t, passepartout_margin_b, hanger, carry_floors,
-            additional_passepartouts, passepartout_reveal_cm
-        ) VALUES (
-            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-        )
-    ');
-    $stmt->execute(array_merge([$orderNumber, $subOrderNumber], order_bind_values($order)));
+    $columns = order_persisted_columns();
+    $sql = sprintf(
+        'INSERT INTO orders (order_number, sub_order_number, %s) VALUES (?, ?, %s)',
+        implode(', ', $columns),
+        implode(', ', array_fill(0, count($columns), '?'))
+    );
+    $conn->prepare($sql)->execute(array_merge([$orderNumber, $subOrderNumber], order_bind_values($order)));
 }
 
 function update_order_row(PDO $conn, array $order, int $orderId): void
 {
-    $stmt = $conn->prepare('
-        UPDATE orders SET
-            date = ?, accepted_date = ?, width = ?, height = ?, profile = ?, glass = ?,
-            passepartout = ?, passepartout_bill_width = ?, passepartout_bill_height = ?,
-            passepartout_sheet_type_id = ?, passepartout_sheet_usage = ?, passepartout_use = ?,
-            passepartout_background = ?, passepartout_bg_sheet_type_id = ?, passepartout_bg_sheet_usage = ?,
-            back = ?, hanging = ?, weight_kg = ?, customer_name = ?, customer_phone = ?,
-            price = ?, paid = ?, collected = ?, additional_profiles = ?,
-            frame_count = ?, advance_payment = ?, discount = ?, description = ?,
-            passepartout_openings = ?, urgent = ?, student_discount = ?,
-            complex_passepartout = ?, extra_services = ?, transport_km = ?,
-            frame_box = ?, frame_nonstandard = ?, frame_shape = ?, frame_high_complexity = ?,
-            client_passepartout_cutting = ?,
-            profile_ready_frame = ?, profile_ready_frame_price = ?,
-            artwork_type = ?, passepartout_zero = ?, passepartout_margin_l = ?, passepartout_margin_r = ?,
-            passepartout_margin_t = ?, passepartout_margin_b = ?, hanger = ?, carry_floors = ?,
-            additional_passepartouts = ?, passepartout_reveal_cm = ?
-        WHERE id = ?
-    ');
-    $stmt->execute(array_merge(order_bind_values($order), [$orderId]));
+    $assignments = implode(', ', array_map(static fn (string $column): string => "{$column} = ?", order_persisted_columns()));
+    $conn->prepare("UPDATE orders SET {$assignments} WHERE id = ?")
+        ->execute(array_merge(order_bind_values($order), [$orderId]));
 }
 
 function prepare_order_persistence(PDO $conn, array $post, ?string $customerName = null, ?string $customerPhone = null): array
@@ -1568,62 +1831,42 @@ function prepare_order_persistence(PDO $conn, array $post, ?string $customerName
     $pickupDate = parse_user_date_to_iso($post['date'] ?? '');
     $acceptedDate = parse_user_date_to_iso($post['accepted_date'] ?? '') ?? date('Y-m-d');
 
-    return [
+    return array_merge($orderData, [
         'stock_order' => $stockOrder,
         'date' => $pickupDate,
         'accepted_date' => $acceptedDate,
-        'width' => $post['width'] ?? null,
-        'height' => $post['height'] ?? null,
-        'profile' => $post['profile'] ?? '',
-        'profile_ready_frame' => isset($post['profile_ready_frame']) ? 1 : 0,
-        'profile_ready_frame_price' => ($post['profile_ready_frame_price'] ?? '') !== ''
-            ? max(0, (float)$post['profile_ready_frame_price'])
-            : null,
-        'glass' => $post['glass'] ?? '',
-        'passepartout' => !empty($orderData['passepartout_zero'])
-            ? format_passepartout_zero_label($orderData)
-            : ($stockOrder['passepartout'] ?? ($orderData['passepartout'] ?? '')),
+        'passepartout' => $stockOrder['passepartout'] ?? ($orderData['passepartout'] ?? ''),
         'passepartout_bill_width' => $stockOrder['passepartout_bill_width'] ?? null,
         'passepartout_bill_height' => $stockOrder['passepartout_bill_height'] ?? null,
         'passepartout_sheet_type_id' => $stockOrder['passepartout_sheet_type_id'] ?? null,
         'passepartout_sheet_usage' => $stockOrder['passepartout_sheet_usage'] ?? null,
-        'passepartout_use' => $orderData['passepartout_use'] ?? '',
         'passepartout_background' => $stockOrder['passepartout_background'] ?? ($orderData['passepartout_background'] ?? ''),
         'passepartout_bg_sheet_type_id' => $stockOrder['passepartout_bg_sheet_type_id'] ?? null,
         'passepartout_bg_sheet_usage' => $stockOrder['passepartout_bg_sheet_usage'] ?? null,
         'back' => $post['back'] ?? '',
         'hanging' => $post['hanging'] ?? '',
-        'hanger' => trim($post['hanger'] ?? ''),
-        'weight_kg' => ($post['weight_kg'] ?? '') !== '' ? max(0, (float)$post['weight_kg']) : null,
-        'customer_name' => $customerName ?? ($post['customer_name'] ?? ''),
-        'customer_phone' => $customerPhone ?? trim($post['customer_phone'] ?? ''),
         'price' => resolve_order_price($conn, $orderData, $post['price'] ?? null),
         'paid' => isset($post['paid']) ? 1 : 0,
         'collected' => isset($post['collected']) ? 1 : 0,
-        'additional_profiles' => get_additional_profiles(),
-        'frame_count' => max(1, (int)($post['frame_count'] ?? 1)),
-        'advance_payment' => $post['advance_payment'] ?? null,
+        'ready' => isset($post['ready']) || isset($post['collected']) ? 1 : 0,
+        'customer_email' => normalize_email($post['customer_email'] ?? '') ?: null,
+        'customer_id' => resolve_customer_for_order(
+            $conn,
+            (int)($post['customer_id'] ?? 0) ?: null,
+            (string)($customerName ?? ($post['customer_name'] ?? '')),
+            (string)($customerPhone ?? ($post['customer_phone'] ?? '')),
+            (string)($post['customer_email'] ?? '')
+        ),
+        'passepartout_extra_stock' => $stockOrder['passepartout_extra_stock'] ?? null,
+        'advance_payment' => ($post['advance_payment'] ?? '') !== '' ? $post['advance_payment'] : null,
         'discount' => ($post['discount'] ?? '') !== '' ? max(0, min(100, (float)$post['discount'])) : null,
-        'description' => $post['description'] ?? '',
-        'passepartout_openings' => max(1, (int)($post['passepartout_openings'] ?? 1)),
-        'urgent' => isset($post['urgent']) ? 1 : 0,
-        'student_discount' => isset($post['student_discount']) ? 1 : 0,
-        'complex_passepartout' => isset($post['complex_passepartout']) ? 1 : 0,
-        'extra_services' => json_encode(array_values(array_map('intval', $post['extra_services'] ?? []))),
-        'transport_km' => ($post['transport_km'] ?? '') !== '' ? (float)$post['transport_km'] : null,
-        'frame_box' => isset($post['frame_box']) ? 1 : 0,
-        'frame_nonstandard' => isset($post['frame_nonstandard']) ? 1 : 0,
-        'frame_shape' => in_array($post['frame_shape'] ?? '', ['ellipse_12', 'circle_24'], true) ? $post['frame_shape'] : '',
-        'frame_high_complexity' => isset($post['frame_high_complexity']) ? 1 : 0,
-        'client_passepartout_cutting' => isset($post['client_passepartout_cutting']) ? 1 : 0,
-        'artwork_type' => $orderData['artwork_type'] ?? '',
-        'passepartout_zero' => $orderData['passepartout_zero'] ?? 0,
-        'passepartout_margin_l' => $orderData['passepartout_margin_l'] ?? null,
-        'passepartout_margin_r' => $orderData['passepartout_margin_r'] ?? null,
-        'passepartout_margin_t' => $orderData['passepartout_margin_t'] ?? null,
-        'passepartout_margin_b' => $orderData['passepartout_margin_b'] ?? null,
-        'carry_floors' => $orderData['carry_floors'] ?? null,
-        'additional_passepartouts' => get_additional_passepartouts(),
-        'passepartout_reveal_cm' => encode_passepartout_reveals_from_post($post),
-    ];
+        'stock_override' => 0,
+        'stock_shortage' => null,
+    ]);
+}
+
+
+// Със стар config.php (без извикването) срокът на сесията пак се прилага.
+if (session_status() === PHP_SESSION_ACTIVE) {
+    enforce_session_idle_timeout();
 }

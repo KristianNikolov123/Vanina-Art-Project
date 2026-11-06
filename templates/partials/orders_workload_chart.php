@@ -29,32 +29,40 @@ foreach ($days as $day) {
     <div class="collapse show" id="ordersWorkloadCollapse">
         <div class="card-body py-2 px-3 border-top">
             <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2 small text-muted">
-                <span>Натоварване (бр.) по <strong>получаване</strong> — метал ×2; резервации включени</span>
+                <span>Брой приети рамки по <strong>дата на получаване</strong>; резервациите са включени</span>
                 <span class="d-flex flex-wrap gap-3">
-                    <span><span class="workload-legend workload-legend--plastic-metal"></span> Пластмаса + метал</span>
-                    <span><span class="workload-legend workload-legend--wood"></span> Дърво</span>
-                    <span><span class="workload-legend workload-legend--reserved"></span> Резерв. (неясно)</span>
+                    <span><span class="workload-legend workload-legend--metal"></span> Метални</span>
+                    <span><span class="workload-legend workload-legend--plastic"></span> Пластмасови</span>
+                    <span><span class="workload-legend workload-legend--wood"></span> Дървени</span>
+                    <span><span class="workload-legend workload-legend--passepartout"></span> Паспартута</span>
+                    <span><span class="workload-legend workload-legend--reserved"></span> Запазени (неясно)</span>
                     <span>Клик по ред → филтър по получаване</span>
                 </span>
             </div>
-            <div class="orders-workload-list" role="list" aria-label="Брой картини по дни">
+            <div class="orders-workload-list" role="list" aria-label="Брой рамки по дни">
+                <?php
+                $workloadMetrics = [
+                    'metal' => 'метални',
+                    'plastic' => 'пластм.',
+                    'wood' => 'дървени',
+                    'passepartout' => 'паспарту',
+                    'reserved_unknown' => 'запазени',
+                ];
+                ?>
                 <?php foreach ($days as $day): ?>
                 <?php
-                    $plasticMetal = (int)$day['plastic_metal'];
-                    $wood = (int)$day['wood'];
-                    $reservedUnknown = (int)($day['reserved_unknown'] ?? 0);
-                    $plasticMetalPct = $plasticMetal > 0 ? max(6, round($plasticMetal / $max * 100)) : 0;
-                    $woodPct = $wood > 0 ? max(6, round($wood / $max * 100)) : 0;
-                    $reservedPct = $reservedUnknown > 0 ? max(6, round($reservedUnknown / $max * 100)) : 0;
                     $iso = $day['date'];
                     $resList = $day['reservations'] ?? [];
-                    $resNames = array_map(static fn ($r) => ($r['customer_name'] ?? '') . ' (' . (int)($r['painting_count'] ?? 1) . ')', $resList);
-                    $title = format_date_ddmmyyyy($iso)
-                        . ' — пл.+м.: ' . $plasticMetal . ', дърво: ' . $wood . ', резерв.: ' . $reservedUnknown;
-                    if ($resNames !== []) {
-                        $title .= ' — ' . implode('; ', $resNames);
+                    $resNames = array_map(static fn ($r) => ($r['customer_name'] ?? '') . ' (' . (int)($r['painting_count'] ?? 1) . ', ' . ($r['workshop_label'] ?? '') . ')', $resList);
+                    $titleParts = [];
+                    foreach ($workloadMetrics as $key => $label) {
+                        $titleParts[] = $label . ': ' . (int)($day[$key] ?? 0);
                     }
-                    $dayTotal = $plasticMetal + $wood + $reservedUnknown;
+                    $title = format_date_ddmmyyyy($iso) . ' — ' . implode(', ', $titleParts);
+                    if ($resNames !== []) {
+                        $title .= ' — резервации: ' . implode('; ', $resNames);
+                    }
+                    $dayTotal = (int)$day['metal'] + (int)$day['plastic'] + (int)$day['wood'] + (int)($day['reserved_unknown'] ?? 0);
                     $busy = $dayTotal >= max(5, (int)ceil($max * 0.75));
                 ?>
                 <button type="button"
@@ -67,35 +75,22 @@ foreach ($days as $day) {
                         <span class="orders-workload-date-sub"><?= e($day['weekday'] ?? '') ?></span>
                     </div>
                     <div class="orders-workload-metrics">
-                        <div class="orders-workload-metric">
-                            <span class="orders-workload-metric-label">пл.+м.</span>
+                        <?php foreach ($workloadMetrics as $key => $label): ?>
+                        <?php
+                            $value = (int)($day[$key] ?? 0);
+                            $pct = $value > 0 ? max(6, round($value / $max * 100)) : 0;
+                            $cssKey = $key === 'reserved_unknown' ? 'reserved' : $key;
+                        ?>
+                        <div class="orders-workload-metric orders-workload-metric--<?= e($cssKey) ?>">
+                            <span class="orders-workload-metric-label"><?= e($label) ?></span>
                             <div class="orders-workload-track" aria-hidden="true">
-                                <?php if ($plasticMetal > 0): ?>
-                                <div class="orders-workload-fill orders-workload-fill--plastic-metal" style="width: <?= (int)$plasticMetalPct ?>%;"></div>
+                                <?php if ($value > 0): ?>
+                                <div class="orders-workload-fill orders-workload-fill--<?= e($cssKey) ?>" style="width: <?= (int)$pct ?>%;"></div>
                                 <?php endif; ?>
                             </div>
-                            <span class="orders-workload-num orders-workload-num--plastic-metal"><?= $plasticMetal ?></span>
+                            <span class="orders-workload-num orders-workload-num--<?= e($cssKey) ?>"><?= $value ?></span>
                         </div>
-                        <div class="orders-workload-metric">
-                            <span class="orders-workload-metric-label">дърво</span>
-                            <div class="orders-workload-track" aria-hidden="true">
-                                <?php if ($wood > 0): ?>
-                                <div class="orders-workload-fill orders-workload-fill--wood" style="width: <?= (int)$woodPct ?>%;"></div>
-                                <?php endif; ?>
-                            </div>
-                            <span class="orders-workload-num orders-workload-num--wood"><?= $wood ?></span>
-                        </div>
-                        <?php if ($reservedUnknown > 0): ?>
-                        <div class="orders-workload-metric orders-workload-metric--reserved">
-                            <span class="orders-workload-metric-label">рез.</span>
-                            <div class="orders-workload-track" aria-hidden="true">
-                                <?php if ($reservedUnknown > 0): ?>
-                                <div class="orders-workload-fill orders-workload-fill--reserved" style="width: <?= (int)$reservedPct ?>%;"></div>
-                                <?php endif; ?>
-                            </div>
-                            <span class="orders-workload-num orders-workload-num--reserved"><?= $reservedUnknown ?></span>
-                        </div>
-                        <?php endif; ?>
+                        <?php endforeach; ?>
                     </div>
                 </button>
                 <?php endforeach; ?>

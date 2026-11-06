@@ -1,17 +1,17 @@
-// Function to add additional profile fields
+// Паспарту: всеки ред има № + отстояния (отвсякъде / Л / Д / Г / Дол).
+const SIDE_KEYS = ['all', 'l', 'r', 't', 'b'];
+const SIDE_LABELS = { all: 'Отвсякъде', l: 'Л', r: 'Д', t: 'Г', b: 'Дол' };
+const SIDE_TITLES = {
+    all: 'Размер на паспартуто от всяка страна (см)',
+    l: 'Ляво (см)',
+    r: 'Дясно (см)',
+    t: 'Горе (см)',
+    b: 'Долу (см)',
+};
+
 function renumberPassepartoutLayers(container) {
-    if (!container) return;
-    container.querySelectorAll('.passepartout-layer-additional').forEach((layer, index) => {
-        const layerNum = index + 2;
-        const badge = layer.querySelector('.passepartout-layer-badge');
-        if (badge) {
-            badge.textContent = String(layerNum);
-        }
-        const subtitle = layer.querySelector('.passepartout-layer-subtitle');
-        if (subtitle) {
-            subtitle.textContent = `Слой ${layerNum} — надолу`;
-        }
-    });
+    // Редовете вече нямат номер „слой“ — функцията остава за съвместимост.
+    return container;
 }
 
 function parsePassepartoutReveals(stored) {
@@ -25,26 +25,46 @@ function parsePassepartoutReveals(stored) {
     return text.split(',').map((part) => part.trim());
 }
 
-function buildPassepartoutLayerRow(value = '', reveal = '') {
-    const layer = document.createElement('div');
-    layer.className = 'passepartout-layer passepartout-layer-additional p-2 p-md-3 border-top';
+function buildSideCells(prefix, asArray, values = {}) {
+    const wrap = document.createElement('div');
+    wrap.className = 'side-cells';
+    SIDE_KEYS.forEach((key) => {
+        const cell = document.createElement('div');
+        cell.className = `side-cell${key === 'all' ? ' side-cell--all' : ''}`;
+        const label = document.createElement('label');
+        label.className = 'form-label small text-muted mb-0';
+        label.textContent = SIDE_LABELS[key];
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.inputMode = 'decimal';
+        input.autocomplete = 'off';
+        input.maxLength = 5;
+        input.className = 'form-control form-control-sm order-price-trigger side-input';
+        input.name = `${prefix}${key}${asArray ? '[]' : ''}`;
+        input.title = SIDE_TITLES[key];
+        input.placeholder = 'см';
+        const value = values[key];
+        input.value = value === null || value === undefined ? '' : String(value);
+        cell.appendChild(label);
+        cell.appendChild(input);
+        wrap.appendChild(cell);
+    });
+    return wrap;
+}
 
-    const head = document.createElement('div');
-    head.className = 'd-flex align-items-center gap-2 mb-2';
-    head.innerHTML = `
-        <span class="badge rounded-pill text-bg-secondary passepartout-layer-badge">2</span>
-        <span class="small fw-semibold text-muted passepartout-layer-subtitle">Слой 2 — надолу</span>
-    `;
+function buildPassepartoutLayerRow(value = '', sides = {}) {
+    const layer = document.createElement('div');
+    layer.className = 'passepartout-layer passepartout-layer-additional p-2 border-top';
 
     const fields = document.createElement('div');
     fields.className = 'row g-2 align-items-end passepartout-layer-fields';
 
     const stockCol = document.createElement('div');
-    stockCol.className = 'col-6';
-    stockCol.innerHTML = '<label class="form-label small text-muted mb-0">№ от склад</label>';
+    stockCol.className = 'col-md-3 col-12';
+    stockCol.innerHTML = '<label class="form-label small text-muted mb-0">№ паспарту</label>';
     const input = document.createElement('input');
     input.type = 'text';
-    input.className = 'form-control order-price-trigger';
+    input.className = 'form-control form-control-sm order-price-trigger';
     input.name = 'additional_passepartouts[]';
     input.setAttribute('list', 'passepartoutCatalog');
     input.setAttribute('autocomplete', 'off');
@@ -52,37 +72,32 @@ function buildPassepartoutLayerRow(value = '', reveal = '') {
     input.value = value;
     stockCol.appendChild(input);
 
-    const revealCol = document.createElement('div');
-    revealCol.className = 'col-4';
-    revealCol.innerHTML = '<label class="form-label small text-muted mb-0">Отстъп</label>';
-    const revealInput = document.createElement('input');
-    revealInput.type = 'text';
-    revealInput.inputMode = 'decimal';
-    revealInput.autocomplete = 'off';
-    revealInput.className = 'form-control passepartout-reveal-input';
-    revealInput.name = 'passepartout_reveal[]';
-    revealInput.placeholder = 'см';
-    revealInput.value = reveal;
-    revealCol.appendChild(revealInput);
+    const sidesCol = document.createElement('div');
+    sidesCol.className = 'col-md-8 col-10';
+    sidesCol.appendChild(buildSideCells('pp_', true, sides));
 
     const actionCol = document.createElement('div');
-    actionCol.className = 'col-2 d-grid';
-    actionCol.innerHTML = '<label class="form-label small text-muted mb-0 d-none d-md-block">&nbsp;</label>';
+    actionCol.className = 'col-md-1 col-2 d-grid';
     const button = document.createElement('button');
     button.type = 'button';
-    button.className = 'btn btn-outline-danger';
+    button.className = 'btn btn-sm btn-outline-danger';
+    button.title = 'Премахни паспартуто';
     button.innerHTML = '<i class="fas fa-minus"></i>';
     button.addEventListener('click', () => {
-        const container = layer.parentElement;
+        const form = layer.closest('form');
         layer.remove();
-        renumberPassepartoutLayers(container);
+        if (form) {
+            form.dispatchEvent(new Event('input', { bubbles: true }));
+            if (form.dataset.autoPrice !== '0') {
+                updateOrderPricing(form);
+            }
+        }
     });
     actionCol.appendChild(button);
 
     fields.appendChild(stockCol);
-    fields.appendChild(revealCol);
+    fields.appendChild(sidesCol);
     fields.appendChild(actionCol);
-    layer.appendChild(head);
     layer.appendChild(fields);
 
     return layer;
@@ -92,13 +107,22 @@ function addPassepartoutField(containerId) {
     const container = document.getElementById(containerId);
     if (!container) return;
     container.appendChild(buildPassepartoutLayerRow());
-    renumberPassepartoutLayers(container);
 }
 
-function appendAdditionalPassepartoutField(container, value, reveal = '') {
+function appendAdditionalPassepartoutField(container, value, sides = {}) {
     if (!container) return;
-    container.appendChild(buildPassepartoutLayerRow(value, reveal));
-    renumberPassepartoutLayers(container);
+    container.appendChild(buildPassepartoutLayerRow(value, sides));
+}
+
+function setSideInputs(scope, prefix, values = {}, arrayIndex = null) {
+    if (!scope) return;
+    SIDE_KEYS.forEach((key) => {
+        const selector = arrayIndex === null ? `[name="${prefix}${key}"]` : `[name="${prefix}${key}[]"]`;
+        const input = scope.querySelector(selector);
+        if (!input) return;
+        const value = values ? values[key] : null;
+        input.value = value === null || value === undefined ? '' : String(value);
+    });
 }
 
 function addProfileField(containerId = 'additionalProfiles') {
@@ -174,12 +198,15 @@ function clearAddOrderForm() {
     expandOrderExtrasIfNeeded(form, null);
     syncHangingWeightField(form);
     syncPassepartoutUseFields(form);
-    syncPassepartoutZeroFields(form);
     syncProfileReadyFrameFields(form);
     syncAreaTierSuggestions(form);
+    syncExtrasDynamicFields(form);
     form.dataset.autoPrice = '1';
     setOrderFormAcceptedDateToday(form);
     syncPickupDatePickerFromForm(form);
+    if (typeof clearFormDraft === 'function') {
+        clearFormDraft(form);
+    }
 }
 
 function formatDateDdMmYyyy(dateStr) {
@@ -257,60 +284,94 @@ function syncPassepartoutUseFields(form) {
     const stack = form.querySelector('.passepartout-mode-stack');
     const bgOnly = form.querySelector('.passepartout-mode-background');
     const fondWrap = form.querySelector('.passepartout-mode-both-fond');
+    const fieldWrap = form.querySelector('.passepartout-mode-field');
 
-    const showStack = use === 'passepartout' || use === 'both';
+    // „Поле“ е рядко ползвана опция: показва клетките за поле + редовете за паспарту (по желание).
+    const showStack = use === 'passepartout' || use === 'both' || use === 'field';
     const showBgOnly = use === 'background';
     const showFond = use === 'both';
+    const showField = use === 'field';
 
     stack?.classList.toggle('d-none', !showStack);
     bgOnly?.classList.toggle('d-none', !showBgOnly);
     fondWrap?.classList.toggle('d-none', !showFond);
+    fieldWrap?.classList.toggle('d-none', !showField);
 
     setPassepartoutBlockDisabled(stack, !showStack);
     setPassepartoutBlockDisabled(bgOnly, !showBgOnly);
     setPassepartoutBlockDisabled(fondWrap, !showFond);
+    setPassepartoutBlockDisabled(fieldWrap, !showField);
+}
 
-    if (use === 'background') {
-        const zeroCheck = form.querySelector('[name="passepartout_zero"]');
-        if (zeroCheck) {
-            zeroCheck.checked = false;
+function syncPassepartoutZeroFields() {
+    // Нулевото паспарту е премахнато (2026-11).
+}
+
+/** Показва/скрива клетките за договорена цена, дистанционера, подрамката и броя закачалки. */
+function syncExtrasDynamicFields(form) {
+    if (!form) return;
+    form.querySelectorAll('.extra-service-check').forEach((check) => {
+        const item = check.closest('.extra-service-item');
+        if (!item) return;
+        const manual = item.querySelector('.extra-service-manual-price');
+        if (manual) {
+            manual.classList.toggle('d-none', !check.checked);
+            manual.querySelectorAll('input').forEach((input) => { input.disabled = !check.checked; });
         }
-        syncPassepartoutZeroFields(form);
+        const spacer = item.querySelector('.extra-service-spacer');
+        if (spacer) {
+            spacer.classList.toggle('d-none', !check.checked);
+            spacer.querySelectorAll('input').forEach((input) => { input.disabled = !check.checked; });
+            syncSpacerStockHint(form, item, check.checked);
+        }
+    });
+
+    const thickness = form.querySelector('[name="subframe_thickness"]');
+    const manualWrap = form.querySelector('.subframe-manual-wrap');
+    if (thickness && manualWrap) {
+        const w = parseDecimal(form.querySelector('[name="width"]')?.value);
+        const h = parseDecimal(form.querySelector('[name="height"]')?.value);
+        const shortSide = Math.min(w, h);
+        const longSide = Math.max(w, h);
+        const oversize = shortSide > 100.001 || longSide > 150.001;
+        const show = thickness.value !== '' && (oversize || shortSide <= 0);
+        manualWrap.classList.toggle('d-none', !show);
+    }
+
+    const hanger = form.querySelector('[name="hanger"]');
+    const hangerCount = form.querySelector('[name="hanger_count"]');
+    if (hanger && hangerCount) {
+        hangerCount.disabled = hanger.value === '';
+        if (hanger.value === '') {
+            hangerCount.value = '';
+        }
     }
 }
 
-function syncPassepartoutZeroFields(form) {
-    if (!form) return;
+function syncSpacerStockHint(form, item, enabled) {
+    const hint = item.querySelector('.spacer-stock-hint');
+    const input = item.querySelector('[name="spacer_profile"]');
+    if (!hint || !input) return;
+    const name = input.value.trim();
+    const info = name !== '' && window.PROFILE_STOCK ? window.PROFILE_STOCK[name] : null;
+    if (!enabled || name === '') {
+        hint.classList.add('d-none');
+        hint.textContent = '';
+        return;
+    }
+    hint.classList.remove('d-none');
+    if (!info) {
+        hint.className = 'small spacer-stock-hint text-warning';
+        hint.textContent = 'Няма такъв профил в склада.';
+        return;
+    }
+    hint.className = `small spacer-stock-hint ${info.stock > 0 ? 'text-muted' : 'text-danger'}`;
+    hint.textContent = `Цена ${info.price.toFixed(2)} €/л.м., наличност ${info.stock} л.м.`;
+}
 
-    const zeroCheck = form.querySelector('[name="passepartout_zero"]');
-    const primaryLayer = form.querySelector('.passepartout-layer-primary');
-    const marginsWrap = form.querySelector('.passepartout-zero-margins');
-    const titleEl = form.querySelector('.passepartout-layer-primary .passepartout-layer-title');
-    const nameInput = form.querySelector('[name="passepartout"].passepartout-name-input')
-        || form.querySelector('[name="passepartout"]');
-    if (!zeroCheck) return;
-
-    const isZero = zeroCheck.checked;
-    if (marginsWrap) {
-        marginsWrap.classList.toggle('d-none', !isZero);
-    }
-    if (primaryLayer) {
-        primaryLayer.classList.toggle('passepartout-layer--zero', isZero);
-    }
-    if (titleEl) {
-        titleEl.textContent = isZero
-            ? 'Нулево — слой 1 (най-горе)'
-            : 'Слой 1 — най-горе (към стъкло)';
-    }
-    if (nameInput) {
-        nameInput.disabled = isZero;
-        if (isZero) {
-            nameInput.value = '';
-            nameInput.placeholder = 'Не се въвежда № при нулево';
-        } else {
-            nameInput.placeholder = '№ от склада';
-        }
-    }
+function parseDecimal(value) {
+    const num = parseFloat(String(value ?? '').replace(',', '.'));
+    return Number.isFinite(num) ? num : 0;
 }
 
 function isoDateToDdMmYyyy(iso) {
@@ -663,6 +724,7 @@ function applyOrderRowVisibility() {
     const dayFilter = getOrderDayFilterValue();
     const paymentFilter = document.querySelector('[data-filter-group="payment"].active')?.dataset.filter;
     const collectionFilter = document.querySelector('[data-filter-group="collection"].active')?.dataset.filter;
+    const workFilter = document.querySelector('[data-filter-group="work"].active')?.dataset.filter;
 
     document.querySelectorAll('.order-row').forEach((row) => {
         const haystack = typeof buildOrderRowSearchHaystack === 'function'
@@ -675,6 +737,10 @@ function applyOrderRowVisibility() {
         const order = row.dataset.order ? JSON.parse(row.dataset.order) : null;
         const paid = order ? Boolean(order.paid) : row.querySelector('.badge.bg-success') !== null;
         const collected = order ? Boolean(order.collected) : row.querySelector('.badge.bg-info') !== null;
+        const ready = order ? Boolean(order.ready) : false;
+        let matchesWork = true;
+        if (workFilter === 'ready') matchesWork = ready;
+        if (workFilter === 'in_progress') matchesWork = !ready;
 
         let matchesPayment = true;
         if (paymentFilter === 'paid') matchesPayment = paid;
@@ -686,7 +752,7 @@ function applyOrderRowVisibility() {
 
         const matchesDay = !dayFilter || getOrderRowIsoDate(row) === dayFilter;
 
-        row.style.display = matchesSearch && matchesPayment && matchesCollection && matchesDay ? '' : 'none';
+        row.style.display = matchesSearch && matchesPayment && matchesCollection && matchesWork && matchesDay ? '' : 'none';
     });
 }
 
@@ -696,7 +762,8 @@ function syncStatusFilterAllButton() {
 
     const hasPayment = document.querySelector('[data-filter-group="payment"].active');
     const hasCollection = document.querySelector('[data-filter-group="collection"].active');
-    allButton.classList.toggle('active', !hasPayment && !hasCollection);
+    const hasWork = document.querySelector('[data-filter-group="work"].active');
+    allButton.classList.toggle('active', !hasPayment && !hasCollection && !hasWork);
 }
 
 const ORDERS_SYNC_INTERVAL_MS = 3500;
@@ -724,7 +791,7 @@ function bindSingleOrderRow(row) {
     }
 
     row.addEventListener('click', function (e) {
-        if (e.target.closest('.description-preview')) {
+        if (e.target.closest('.description-preview') || e.target.closest('.status-btn')) {
             return;
         }
         viewOrder(row.dataset.orderId);
@@ -804,7 +871,8 @@ async function pollActiveOrdersSync() {
     try {
         const response = await fetch(`${base}/api/active_orders${query}`, {
             credentials: 'same-origin',
-            headers: { Accept: 'application/json' },
+            // Автоматичното опресняване не удължава сесията.
+            headers: { Accept: 'application/json', 'X-Session-Passive': '1' },
         });
         if (!response.ok) {
             return;
@@ -845,6 +913,7 @@ function initOrdersLiveSync() {
 function addSubOrder(orderId) {
     const form = document.getElementById('addSubOrderForm');
     form.action = `${window.BASE_PATH}/add_sub_order/${orderId}`;
+    form.dataset.draftKey = `sub:${orderId}`;
 
     const modal = new bootstrap.Modal(document.getElementById('addSubOrderModal'));
     modal.show();
@@ -854,49 +923,10 @@ function addSubOrder(orderId) {
 let currentViewOrderId = null;
 
 function buildOrderExtrasLabels(data) {
-    const labels = [];
-    const servicesMap = window.SERVICES_MAP || {};
-
-    if (data.urgent) labels.push('Спешна (+50%)');
-    if (data.student_discount) labels.push('Ученик (−10%)');
-    if (data.complex_passepartout) labels.push('Сложно паспарту (+50%)');
-    if (data.frame_box) labels.push('Рамка тип кутия');
-    if (data.frame_nonstandard) labels.push('Нестандартна форма');
-    if (data.frame_high_complexity) labels.push('Висока сложност (+50%)');
-    if (data.client_passepartout_cutting) labels.push('Рязане паспарту на клиент');
-
-    if (data.frame_shape === 'ellipse_12') {
-        labels.push('Елипса / кръг 12 страни');
-    } else if (data.frame_shape === 'circle_24') {
-        labels.push('Кръг 24 страни');
+    if (Array.isArray(data.extras_labels)) {
+        return data.extras_labels;
     }
-
-    const openings = Number(data.passepartout_openings ?? 1);
-    if (openings > 1) {
-        labels.push(`${openings} отвора паспарту`);
-    }
-
-    const transportKm = Number(data.transport_km ?? 0);
-    if (transportKm > 0) {
-        const kmText = Number.isInteger(transportKm) ? transportKm : transportKm.toFixed(2).replace(/\.?0+$/, '');
-        labels.push(`Транспорт ${kmText} км`);
-    }
-
-    let serviceIds = [];
-    try {
-        serviceIds = typeof data.extra_services === 'string'
-            ? JSON.parse(data.extra_services || '[]')
-            : (data.extra_services || []);
-    } catch (e) {
-        serviceIds = [];
-    }
-
-    serviceIds.forEach((id) => {
-        const name = servicesMap[id] || servicesMap[String(id)];
-        if (name) labels.push(name);
-    });
-
-    return labels;
+    return [];
 }
 
 function displayValue(value) {
@@ -929,12 +959,19 @@ function viewOrder(orderId) {
         || formatDateDdMmYyyy(data.date)
         || '—';
     let sizeText = data.width && data.height
-        ? `${data.width} × ${data.height} cm`
+        ? `${data.width} × ${data.height} см`
         : '—';
     if (data.artwork_type && window.ARTWORK_TYPE_LABELS && window.ARTWORK_TYPE_LABELS[data.artwork_type]) {
         sizeText = sizeText === '—'
             ? window.ARTWORK_TYPE_LABELS[data.artwork_type]
             : `${sizeText} · ${window.ARTWORK_TYPE_LABELS[data.artwork_type]}`;
+    }
+    const sizeExtras = [];
+    if (data.frame_measure_label) sizeExtras.push(`мерене: ${data.frame_measure_label}`);
+    if (data.frame_shape_label) sizeExtras.push(`фигура: ${data.frame_shape_label}`);
+    if (data.field_label) sizeExtras.push(`поле: ${data.field_label}`);
+    if (sizeExtras.length > 0) {
+        sizeText += ` (${sizeExtras.join('; ')})`;
     }
     document.getElementById('viewOrderSize').textContent = sizeText;
     document.getElementById('viewOrderFrameCount').textContent = displayValue(data.frame_count ?? 1);
@@ -944,7 +981,9 @@ function viewOrder(orderId) {
     document.getElementById('viewOrderBack').textContent = displayValue(data.back);
     let hangingText = displayValue(data.hanging);
     if (data.hanger) {
-        hangingText = hangingText === '—' ? data.hanger : `${hangingText} + ${data.hanger}`;
+        const count = data.hanger_count === null || data.hanger_count === undefined || data.hanger_count === '' ? 2 : data.hanger_count;
+        const hangerText = `${data.hanger} × ${count}/рамка`;
+        hangingText = hangingText === '—' ? hangerText : `${hangingText} + ${hangerText}`;
     }
     document.getElementById('viewOrderHanging').textContent = hangingText;
     document.getElementById('viewOrderCustomer').textContent = displayValue(data.customer_name);
@@ -966,7 +1005,10 @@ function viewOrder(orderId) {
             passepartoutText = passepartoutText === '—' ? extra : `${passepartoutText} · ${extra}`;
         }
     }
-    const revealParts = parsePassepartoutReveals(data.passepartout_reveal_cm);
+    if (data.material_layers_label) {
+        passepartoutText = data.material_layers_label;
+    }
+    const revealParts = data.material_layers_label ? [] : parsePassepartoutReveals(data.passepartout_reveal_cm);
     if (revealParts.length > 0) {
         const revealLabel = revealParts.map((r, i) => (r !== '' ? `сл.${i + 1}: ${r} см` : null)).filter(Boolean).join(', ');
         if (revealLabel !== '') {
@@ -974,15 +1016,18 @@ function viewOrder(orderId) {
         }
     }
     if (data.passepartout_bill_width && data.passepartout_bill_height) {
-        passepartoutText += ` (фактурирано: ${data.passepartout_bill_width}×${data.passepartout_bill_height} cm)`;
+        passepartoutText += ` (фактурирано: ${data.passepartout_bill_width}×${data.passepartout_bill_height} см)`;
     }
     document.getElementById('viewOrderPassepartout').textContent = passepartoutText;
 
-    const statusEl = document.getElementById('viewOrderStatus');
-    statusEl.innerHTML = `
-        <span class="badge ${data.paid ? 'bg-success' : 'bg-danger'}">${data.paid ? 'Платена' : 'Неплатена'}</span>
-        <span class="badge ${data.collected ? 'bg-info' : 'bg-warning'}">${data.collected ? 'Получена' : 'Неполучена'}</span>
-    `;
+    renderViewOrderStatus(orderId, data);
+    const printClient = document.getElementById('viewOrderPrintClient');
+    if (printClient) printClient.href = `${window.BASE_PATH}/order_print/${orderId}`;
+    const notifyBtn = document.getElementById('viewOrderNotifyBtn');
+    if (notifyBtn) {
+        notifyBtn.classList.remove('d-none');
+        notifyBtn.onclick = () => openNotifyModal(orderId);
+    }
 
     const descBlock = document.getElementById('viewOrderDescriptionBlock');
     const desc = (data.description ?? '').trim();
@@ -1001,7 +1046,12 @@ function viewOrder(orderId) {
         : '—';
     document.getElementById('viewOrderDiscount').textContent = formatDiscountDisplay(data.discount);
 
-    const extrasLabels = buildOrderExtrasLabels(data);
+    const extrasLabels = buildOrderExtrasLabels(data).slice();
+    if (data.stock_override && Array.isArray(data.stock_shortage) && data.stock_shortage.length > 0) {
+        data.stock_shortage.forEach((row) => {
+            extrasLabels.push(`⚠ Недостатъчна наличност (потвърдено): ${row.label} ${row.name} — липсват ${row.missing} ${row.unit}`);
+        });
+    }
     const extrasCard = document.getElementById('viewOrderExtrasCard');
     const extrasList = document.getElementById('viewOrderExtrasList');
 
@@ -1018,8 +1068,7 @@ function viewOrder(orderId) {
         extrasCard.style.display = 'none';
     }
 
-    const modal = new bootstrap.Modal(document.getElementById('viewOrderModal'));
-    modal.show();
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('viewOrderModal')).show();
 }
 
 function editOrderFromView() {
@@ -1048,21 +1097,11 @@ function editOrder(orderId) {
     form.querySelector('[name="height"]').value = data.height ?? '';
     form.querySelector('[name="profile"]').value = data.profile ?? '';
     form.querySelector('[name="glass"]').value = data.glass ?? '';
-    const ppInput = form.querySelector('[name="passepartout"]');
-    const ppZero = form.querySelector('[name="passepartout_zero"]');
-    const isZero = Boolean(data.passepartout_zero) || String(data.passepartout || '').startsWith('Нулево');
-    if (ppZero) {
-        ppZero.checked = isZero;
-    }
-    if (ppInput) {
-        ppInput.value = isZero ? '' : parsePrimaryPassepartoutLabel(data.passepartout || '');
-    }
-    ['l', 'r', 't', 'b'].forEach((key) => {
-        const field = form.querySelector(`[name="passepartout_margin_${key}"]`);
-        if (field) {
-            field.value = data[`passepartout_margin_${key}`] ?? '';
-        }
-    });
+    const orderIdInput = form.querySelector('[name="_order_id"]');
+    if (orderIdInput) orderIdInput.value = orderId;
+    const stockConfirmed = form.querySelector('[name="stock_confirmed"]');
+    if (stockConfirmed) stockConfirmed.value = '';
+
     let ppUse = data.passepartout_use || '';
     if (!ppUse) {
         const bgStored = String(data.passepartout_background ?? '').trim();
@@ -1074,43 +1113,77 @@ function editOrder(orderId) {
             ppUse = 'passepartout';
         }
     }
+    const hasField = ['all', 'l', 'r', 't', 'b'].some((key) => {
+        const value = data[`field_margin_${key}`];
+        return value !== null && value !== undefined && value !== '';
+    });
+    if (hasField && ppUse === 'passepartout') {
+        ppUse = 'field';
+    }
     const useSelect = form.querySelector('[name="passepartout_use"]');
     if (useSelect) {
         useSelect.value = ppUse;
     }
     syncPassepartoutUseFields(form);
 
+    ['all', 'l', 'r', 't', 'b'].forEach((key) => {
+        const field = form.querySelector(`[name="field_margin_${key}"]`);
+        if (field) field.value = data[`field_margin_${key}`] ?? '';
+    });
+
+    const layers = Array.isArray(data.passepartout_layers) && data.passepartout_layers.length > 0
+        ? data.passepartout_layers
+        : [];
+    const legacyNames = [];
+    if (layers.length === 0 && ppUse !== 'background') {
+        const isZero = Boolean(data.passepartout_zero) || String(data.passepartout || '').startsWith('Нулево');
+        const primary = isZero ? '' : parsePrimaryPassepartoutLabel(data.passepartout || '').replace(/\s+\((паспарту|фон)\)\s*$/, '');
+        if (primary) legacyNames.push(primary);
+        String(data.additional_passepartouts || '').split(',').map((n) => n.trim()).filter(Boolean).forEach((n) => legacyNames.push(n));
+    }
+    const layerEntries = layers.length > 0 ? layers : legacyNames.map((name) => ({ name }));
+
+    const stack = form.querySelector('.passepartout-mode-stack');
+    const primaryLayer = form.querySelector('.passepartout-layer-primary');
+    const ppInput = primaryLayer?.querySelector('[name="passepartout"]');
+    if (ppInput) {
+        ppInput.value = layerEntries[0]?.name ?? '';
+    }
+    setSideInputs(primaryLayer, 'pp_', layerEntries[0] || {}, 0);
+
+    const extraPpContainer = form.querySelector('[id$="_extraPp"]');
+    if (extraPpContainer) {
+        extraPpContainer.innerHTML = '';
+        if (ppUse !== 'background') {
+            layerEntries.slice(1).forEach((entry) => {
+                appendAdditionalPassepartoutField(extraPpContainer, entry.name ?? '', entry);
+            });
+        }
+    }
+
+    const bgOffsets = data.passepartout_bg_offsets && typeof data.passepartout_bg_offsets === 'object'
+        ? data.passepartout_bg_offsets
+        : {};
     const fondInput = form.querySelector('[name="passepartout_background"]');
     if (fondInput) {
         fondInput.value = data.passepartout_background ?? '';
     }
-
+    form.querySelectorAll('.passepartout-mode-background, .passepartout-mode-both-fond').forEach((block) => {
+        setSideInputs(block, 'bg_', bgOffsets);
+    });
     if (ppUse === 'background') {
         const bgInput = form.querySelector('.passepartout-fond-only-input');
         if (bgInput) {
-            bgInput.value = parsePrimaryPassepartoutLabel(data.passepartout || '');
-        }
-    }
-
-    syncPassepartoutZeroFields(form);
-    const revealParts = parsePassepartoutReveals(data.passepartout_reveal_cm);
-    const primaryReveal = form.querySelector('.passepartout-layer-primary [name="passepartout_reveal[]"]');
-    if (primaryReveal) {
-        primaryReveal.value = revealParts[0] ?? '';
-    }
-    const extraPpContainer = form.querySelector('[id$="_extraPp"]');
-    if (extraPpContainer) {
-        extraPpContainer.innerHTML = '';
-        if (ppUse !== 'background' && data.additional_passepartouts) {
-            data.additional_passepartouts.split(', ').forEach((name, index) => {
-                const trimmed = name.trim();
-                if (trimmed !== '') {
-                    appendAdditionalPassepartoutField(extraPpContainer, trimmed, revealParts[index + 1] ?? '');
-                }
-            });
+            bgInput.value = parsePrimaryPassepartoutLabel(data.passepartout || '').replace(/\s+\((паспарту|фон)\)\s*$/, '');
         }
     }
     syncPassepartoutUseFields(form);
+    if (stack && ppUse === 'background' && ppInput) {
+        ppInput.value = '';
+    }
+
+    const frameMeasure = form.querySelector('[name="frame_measure"]');
+    if (frameMeasure) frameMeasure.value = data.frame_measure ?? '';
     const artworkSelect = form.querySelector('[name="artwork_type"]');
     if (artworkSelect) {
         artworkSelect.value = data.artwork_type ?? '';
@@ -1130,6 +1203,10 @@ function editOrder(orderId) {
     if (hangerSelect) {
         hangerSelect.value = data.hanger ?? '';
     }
+    const hangerCount = form.querySelector('[name="hanger_count"]');
+    if (hangerCount) {
+        hangerCount.value = data.hanger_count ?? '';
+    }
     const weightKg = form.querySelector('[name="weight_kg"]');
     if (weightKg) {
         weightKg.value = data.weight_kg ?? '';
@@ -1146,6 +1223,12 @@ function editOrder(orderId) {
     form.querySelector('[name="frame_count"]').value = data.frame_count ?? 1;
     form.querySelector('[name="paid"]').checked = Boolean(data.paid);
     form.querySelector('[name="collected"]').checked = Boolean(data.collected);
+    const readyBox = form.querySelector('[name="ready"]');
+    if (readyBox) readyBox.checked = Boolean(data.ready);
+    const emailInput = form.querySelector('[name="customer_email"]');
+    if (emailInput) emailInput.value = data.customer_email ?? '';
+    const customerIdInput = form.querySelector('[name="customer_id"]');
+    if (customerIdInput) customerIdInput.value = data.customer_id ?? '';
     form.querySelector('[name="description"]').value = data.description ?? '';
     loadOrderExtras(form, data);
 
@@ -1160,6 +1243,11 @@ function editOrder(orderId) {
     }
 
     form.action = `${window.BASE_PATH}/edit_order/${orderId}`;
+    form.dataset.draftKey = `edit:${orderId}`;
+    syncExtrasDynamicFields(form);
+    if (typeof restoreFormDraftIfAny === 'function') {
+        restoreFormDraftIfAny(form);
+    }
 
     updateOrderPricing(form);
 
@@ -1171,17 +1259,11 @@ function loadOrderExtras(form, data) {
     const openings = form.querySelector('[name="passepartout_openings"]');
     if (openings) openings.value = data.passepartout_openings ?? 1;
 
-    const transportKm = form.querySelector('[name="transport_km"]');
-    if (transportKm) transportKm.value = data.transport_km ?? '';
-
-    const carryFloors = form.querySelector('[name="carry_floors"]');
-    if (carryFloors) carryFloors.value = data.carry_floors ?? '';
-
     const urgent = form.querySelector('[name="urgent"]');
-    if (urgent) urgent.checked = Boolean(data.urgent);
+    if (urgent) urgent.value = String(Number(data.urgent) || 0);
 
-    const student = form.querySelector('[name="student_discount"]');
-    if (student) student.checked = Boolean(data.student_discount);
+    const complexOrder = form.querySelector('[name="complex_order_percent"]');
+    if (complexOrder) complexOrder.value = data.complex_order_percent ?? '';
 
     const complex = form.querySelector('[name="complex_passepartout"]');
     if (complex) complex.checked = Boolean(data.complex_passepartout);
@@ -1194,10 +1276,33 @@ function loadOrderExtras(form, data) {
     } catch (e) {
         serviceIds = [];
     }
+    let manualPrices = {};
+    try {
+        manualPrices = typeof data.extra_services_manual === 'string'
+            ? JSON.parse(data.extra_services_manual || '{}')
+            : (data.extra_services_manual || {});
+    } catch (e) {
+        manualPrices = {};
+    }
 
     form.querySelectorAll('.extra-service-check').forEach((checkbox) => {
         checkbox.checked = serviceIds.includes(parseInt(checkbox.value, 10));
     });
+    form.querySelectorAll('[name^="extra_services_manual["]').forEach((input) => {
+        const match = input.name.match(/\[(\d+)\]/);
+        const id = match ? match[1] : '';
+        input.value = manualPrices && manualPrices[id] !== undefined ? manualPrices[id] : '';
+    });
+
+    const setValue = (name, value) => {
+        const field = form.querySelector(`[name="${name}"]`);
+        if (field) field.value = value ?? '';
+    };
+    setValue('spacer_profile', data.spacer_profile);
+    setValue('subframe_thickness', data.subframe_thickness);
+    setValue('subframe_manual_price', data.subframe_manual_price);
+    setValue('box_subframe_gap_cm', data.box_subframe_gap_cm);
+    setValue('canvas_support_note', data.canvas_support_note);
 
     const frameBox = form.querySelector('[name="frame_box"]');
     if (frameBox) frameBox.checked = Boolean(data.frame_box);
@@ -1218,6 +1323,7 @@ function loadOrderExtras(form, data) {
     if (weightKg) weightKg.value = data.weight_kg ?? '';
 
     syncHangingWeightField(form);
+    syncExtrasDynamicFields(form);
     expandOrderExtrasIfNeeded(form, data);
 }
 
@@ -1232,7 +1338,10 @@ function orderHasExtras(data) {
     }
 
     return Boolean(
-        data.urgent
+        Number(data.urgent) > 0
+        || Number(data.complex_order_percent) > 0
+        || data.subframe_thickness
+        || data.has_additional_services
         || data.student_discount
         || data.complex_passepartout
         || data.frame_box
@@ -1273,8 +1382,13 @@ async function updateOrderPricing(form) {
     try {
         const response = await fetch(`${window.BASE_PATH}/calculate_price`, {
             method: 'POST',
-            body: formData
+            body: formData,
+            credentials: 'same-origin',
+            headers: { Accept: 'application/json' },
         });
+        if (response.status === 401 && typeof showSessionLoginModal === 'function') {
+            showSessionLoginModal(null);
+        }
         if (!response.ok) {
             preview.style.display = 'none';
             return;
@@ -1282,6 +1396,27 @@ async function updateOrderPricing(form) {
 
         const pricing = await response.json();
         const lines = [];
+
+        const geo = pricing.geometry;
+        const geoHint = form.querySelector('.order-geometry-hint');
+        if (geoHint) {
+            const parts = [];
+            if (geo && geo.picture_width > 0 && geo.picture_height > 0) {
+                const fieldUsed = Array.isArray(geo.field) && geo.field.some((v) => v > 0);
+                if (fieldUsed) {
+                    parts.push(`след полето: ${geo.base_width}×${geo.base_height} см`);
+                }
+                (geo.layers || []).forEach((layer) => {
+                    const role = layer.role === 'background' ? 'фон' : 'паспарту';
+                    const label = layer.name ? `${role} ${layer.name}` : role;
+                    parts.push(`${label}: ${layer.width}×${layer.height} см`);
+                });
+                if (geo.frame_width !== geo.picture_width || geo.frame_height !== geo.picture_height) {
+                    parts.push(`рамка: ${geo.frame_width}×${geo.frame_height} см`);
+                }
+            }
+            geoHint.textContent = parts.length > 0 ? `Размери за цена — ${parts.join('; ')}` : '';
+        }
 
         const profileName = formData.get('profile');
         if (pricing.profile_lines && pricing.profile_lines.length > 0) {
@@ -1292,7 +1427,7 @@ async function updateOrderPricing(form) {
                     return;
                 }
                 const dims = line.bill_width && line.bill_height
-                    ? ` при ${line.bill_width}×${line.bill_height} cm`
+                    ? ` при ${line.bill_width}×${line.bill_height} см`
                     : '';
                 const costPart = line.cost > 0 ? ` → ${line.cost.toFixed(2)} €` : '';
                 const laborPart = line.labor_cost > 0 ? `, труд ${line.labor_cost.toFixed(2)} €` : '';
@@ -1300,8 +1435,8 @@ async function updateOrderPricing(form) {
                     ? `${line.base_meters.toFixed(2)} + ${line.fir_meters.toFixed(2)} фира = ${line.meters.toFixed(2)} л.м.`
                     : `${line.meters} л.м.`;
                 let text = `${label} (${line.name}): ${meterPart}${dims}${costPart}${laborPart}`;
-                if (index === 0 && pricing.profile_wide_billing) {
-                    text += ' (широк профил → 3 м/страна)';
+                if (line.long_side_billing) {
+                    text += ' (дълга страна → 290/300 см)';
                 }
                 if (index === 0 && pricing.frame_shape) {
                     text += ` (${pricing.frame_shape})`;
@@ -1322,7 +1457,7 @@ async function updateOrderPricing(form) {
                 parts.push(`труд ${pricing.frame_labor_cost.toFixed(2)} €`);
             }
             if (pricing.profile_wide_billing) {
-                parts.push('широк профил → 3 м/страна');
+                parts.push('дълга страна → 290/300 см');
             }
             if (pricing.frame_shape) {
                 parts.push(pricing.frame_shape);
@@ -1330,6 +1465,9 @@ async function updateOrderPricing(form) {
             lines.push(`Профил (${pricing.profile_meters} л.м.): ${parts.join(' + ')}`);
         } else if (profileName && pricing.profile_meters > 0 && pricing.profile_found === false) {
             lines.push(`<span class="text-warning">Профил „${profileName}" не е в Склад → Профили (липсва цена на материал)</span>`);
+        }
+        if (pricing.frame_side_surcharge > 0) {
+            lines.push(`Голяма рамка (вкл. в труда) → ${pricing.frame_side_surcharge.toFixed(2)} €`);
         }
         if (pricing.profile_ready_frame_cost > 0) {
             lines.push(`Готова рамка → ${pricing.profile_ready_frame_cost.toFixed(2)} €`);
@@ -1357,6 +1495,9 @@ async function updateOrderPricing(form) {
                 if (parts.length > 0) {
                     hangingText += `: ${parts.join(', ')}`;
                 }
+            }
+            if (pricing.hanger_count > 0) {
+                hangingText += ` (закачалки ${pricing.hanger_count}/рамка → ${pricing.hanger_cost.toFixed(2)} €)`;
             }
             lines.push(`${hangingText} → ${pricing.hanging_cost.toFixed(2)} €`);
         }
@@ -1391,7 +1532,7 @@ async function updateOrderPricing(form) {
                     ? `, ${layer.tier_label} (${layer.unit_price.toFixed(2)} €/бр.)`
                     : '';
                 const costPart = shareCost != null ? ` → ${shareCost.toFixed(2)} €` : '';
-                return `${roleLabel}: ${layer.passepartout_name}, ${layer.bill_width}×${layer.bill_height} cm${layerPrice}${layerUsage}${costPart}`;
+                return `${roleLabel}: ${layer.passepartout_name}, ${layer.bill_width}×${layer.bill_height} см${layerPrice}${layerUsage}${costPart}`;
             };
 
             if (pp.passepartout_use === 'both' && pp.background_layer) {
@@ -1408,11 +1549,27 @@ async function updateOrderPricing(form) {
             } else {
                 const useLabel = pp.use_label ? ` (${pp.use_label})` : '';
                 lines.push(
-                    `Паспарту${useLabel}: ${pp.bill_width}×${pp.bill_height} cm${multiSheetText}${openingsText}${priceDetail}${usageText}${labor} → ${pricing.passepartout_cost.toFixed(2)} €`
+                    `Паспарту${useLabel}: ${pp.bill_width}×${pp.bill_height} см${multiSheetText}${openingsText}${priceDetail}${usageText}${labor} → ${pricing.passepartout_cost.toFixed(2)} €`
                 );
             }
         } else if (pricing.passepartout_labor_cost > 0) {
             lines.push(`Рязане паспарту на клиент → ${pricing.passepartout_labor_cost.toFixed(2)} €`);
+        }
+        if (pricing.passepartout_extra_layers && pricing.passepartout_extra_layers.length > 0) {
+            pricing.passepartout_extra_layers.forEach((layer) => {
+                lines.push(`Паспарту ${layer.passepartout_name}: ${layer.bill_width}×${layer.bill_height} см → ${Number(layer.cost).toFixed(2)} € (вкл. в общото)`);
+            });
+        }
+        if (pricing.subframe) {
+            const sf = pricing.subframe;
+            if (sf.manual) {
+                lines.push(sf.needs_manual_price
+                    ? '<span class="text-warning">Подрамка над 100/150 см — въведете договорена цена</span>'
+                    : `Подрамка ${sf.thickness} см (договорена) → ${sf.cost.toFixed(2)} €`);
+            } else {
+                const factor = sf.factor !== 1 ? ` ×${sf.factor}` : '';
+                lines.push(`Подрамка ${sf.thickness} см: ${sf.meters} л.м. × ${Number(sf.price_per_lm).toFixed(2)} €${factor} + труд ${sf.labor_cost.toFixed(2)} € → ${sf.cost.toFixed(2)} €`);
+            }
         }
         if (pricing.extra_services && pricing.extra_services.length > 0) {
             pricing.extra_services.forEach((service) => {
@@ -1422,12 +1579,6 @@ async function updateOrderPricing(form) {
         if (pricing.complex_passepartout_surcharge > 0) {
             lines.push(`Сложно паспарту (+50%) → ${pricing.complex_passepartout_surcharge.toFixed(2)} €`);
         }
-        if (pricing.volume_discount > 0) {
-            lines.push(`Обемна отстъпка → −${pricing.volume_discount.toFixed(2)} €`);
-        }
-        if (pricing.student_discount_amount > 0) {
-            lines.push(`Ученик/студент → −${pricing.student_discount_amount.toFixed(2)} €`);
-        }
         if (pricing.manual_discount_amount > 0) {
             const pct = pricing.manual_discount_percent > 0
                 ? ` (${pricing.manual_discount_percent}%)`
@@ -1435,7 +1586,10 @@ async function updateOrderPricing(form) {
             lines.push(`Ръчна отстъпка${pct} → −${pricing.manual_discount_amount.toFixed(2)} €`);
         }
         if (pricing.urgent_surcharge > 0) {
-            lines.push(`Спешна поръчка (+50%) → +${pricing.urgent_surcharge.toFixed(2)} €`);
+            lines.push(`Спешна поръчка (+${pricing.urgent_percent}%) → +${pricing.urgent_surcharge.toFixed(2)} €`);
+        }
+        if (pricing.complex_order_surcharge > 0) {
+            lines.push(`Сложна поръчка (+${pricing.complex_order_percent}%) → +${pricing.complex_order_surcharge.toFixed(2)} €`);
         }
         if (pricing.total > 0) {
             lines.push(`<strong>Общо: ${pricing.total.toFixed(2)} €</strong>`);
@@ -1466,13 +1620,13 @@ function confirmDelete(orderId) {
 
     if (!collected) {
         if (confirm('Поръчката не е маркирана като получена.\n\nМатериалите ще бъдат върнати в наличност. Поръчката ще отиде в архива на изтритите.\n\nСигурни ли сте?')) {
-            window.location.href = `${window.BASE_PATH}/delete_order/${orderId}?restore_stock=1`;
+            postNavigate(`${window.BASE_PATH}/delete_order/${orderId}`, { restore_stock: '1' });
         }
         return;
     }
 
     if (confirm('Поръчката е маркирана като получена. Материалите няма да бъдат върнати. Поръчката ще отиде в архива на изтритите.\n\nСигурни ли сте?')) {
-        window.location.href = `${window.BASE_PATH}/delete_order/${orderId}`;
+        postNavigate(`${window.BASE_PATH}/delete_order/${orderId}`);
     }
 }
 
@@ -1592,37 +1746,21 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
+    const NON_PRICE_FIELDS = new Set([
+        'customer_name', 'customer_phone', 'description', 'price', 'advance_payment',
+        'paid', 'collected', 'accepted_date', 'date', 'artwork_type', 'stock_confirmed', '_order_id',
+        'box_subframe_gap_cm', 'canvas_support_note',
+    ]);
+
     function shouldRecalculatePrice(event) {
         const el = event.target;
-        return el.classList.contains('order-price-trigger')
-            || el.name === 'additional_profiles[]'
-            || el.name === 'additional_passepartouts[]'
-            || el.name === 'extra_services[]'
-            || el.name === 'passepartout'
-            || el.name === 'passepartout_zero'
-            || el.name === 'passepartout_use'
-            || el.name === 'passepartout_background'
-            || el.name === 'hanger'
-            || el.name === 'carry_floors'
-            || el.name.startsWith('passepartout_margin_')
-            || el.name === 'back'
-            || el.name === 'hanging'
-            || el.name === 'weight_kg'
-            || el.name === 'profile'
-            || el.name === 'frame_count'
-            || el.name === 'passepartout_openings'
-            || el.name === 'transport_km'
-            || el.name === 'discount'
-            || el.name === 'urgent'
-            || el.name === 'student_discount'
-            || el.name === 'complex_passepartout'
-            || el.name === 'frame_box'
-            || el.name === 'frame_nonstandard'
-            || el.name === 'frame_high_complexity'
-            || el.name === 'frame_shape'
-            || el.name === 'client_passepartout_cutting'
-            || el.name === 'profile_ready_frame'
-            || el.name === 'profile_ready_frame_price';
+        if (!el || !el.name) {
+            return false;
+        }
+        if (el.classList.contains('extra-services-search')) {
+            return false;
+        }
+        return !NON_PRICE_FIELDS.has(el.name);
     }
 
     document.querySelectorAll('.order-form').forEach((form) => {
@@ -1648,8 +1786,9 @@ document.addEventListener('DOMContentLoaded', function () {
             if (event.target && (event.target.name === 'width' || event.target.name === 'height')) {
                 syncAreaTierSuggestions(form);
             }
+            syncExtrasDynamicFields(form);
             if (shouldRecalculatePrice(event)) {
-                updateOrderPricing(form);
+                scheduleOrderPricing(form);
             }
         });
 
@@ -1669,13 +1808,16 @@ document.addEventListener('DOMContentLoaded', function () {
             if (event.target && (event.target.name === 'width' || event.target.name === 'height')) {
                 syncAreaTierSuggestions(form);
             }
+            syncExtrasDynamicFields(form);
             if (shouldRecalculatePrice(event)) {
-                updateOrderPricing(form);
+                scheduleOrderPricing(form);
             }
         });
 
+        form.addEventListener('submit', (event) => handleOrderFormSubmit(event, form));
+
         syncPassepartoutUseFields(form);
-        syncPassepartoutZeroFields(form);
+        syncExtrasDynamicFields(form);
         syncProfileReadyFrameFields(form);
         syncAreaTierSuggestions(form);
         bindOrderDatePicker(form);
@@ -1692,6 +1834,9 @@ document.addEventListener('DOMContentLoaded', function () {
             setOrderFormAcceptedDateToday(form);
             expandOrderExtrasIfNeeded(form, null);
             syncHangingWeightField(form);
+            if (typeof restoreFormDraftIfAny === 'function' && restoreFormDraftIfAny(form)) {
+                updateOrderPricing(form);
+            }
         });
     }
 
@@ -1709,6 +1854,9 @@ document.addEventListener('DOMContentLoaded', function () {
             if (!form) return;
             expandOrderExtrasIfNeeded(form, null);
             syncHangingWeightField(form);
+            if (typeof restoreFormDraftIfAny === 'function') {
+                restoreFormDraftIfAny(form);
+            }
         });
     }
 
@@ -1728,4 +1876,248 @@ document.addEventListener('DOMContentLoaded', function () {
         form.dataset.autoPrice = '1';
         updateOrderPricing(form);
     });
+});
+
+// --- Преизчисляване на цената с малко забавяне (по-малко заявки при писане) ---
+const orderPricingTimers = new WeakMap();
+
+function scheduleOrderPricing(form) {
+    if (!form) return;
+    clearTimeout(orderPricingTimers.get(form));
+    orderPricingTimers.set(form, setTimeout(() => updateOrderPricing(form), 250));
+}
+
+// --- Количество 0 в склада: предупреждение и потвърждение „Материалът е наличен“ ---
+let pendingStockForm = null;
+
+async function handleOrderFormSubmit(event, form) {
+    const confirmed = form.querySelector('[name="stock_confirmed"]');
+    if (!confirmed || confirmed.value === '1' || form.dataset.stockChecked === '1') {
+        form.dataset.stockChecked = '';
+        if (typeof clearFormDraft === 'function') {
+            clearFormDraft(form);
+        }
+        return;
+    }
+
+    event.preventDefault();
+    const formData = new FormData(form);
+    let shortages = [];
+    try {
+        const response = await fetch(`${window.BASE_PATH}/check_stock`, {
+            method: 'POST',
+            body: formData,
+            credentials: 'same-origin',
+            headers: { Accept: 'application/json' },
+        });
+        if (response.status === 401) {
+            if (typeof showSessionLoginModal === 'function') {
+                showSessionLoginModal(form);
+            }
+            return;
+        }
+        if (response.ok) {
+            const data = await response.json();
+            shortages = Array.isArray(data.shortages) ? data.shortages : [];
+        }
+    } catch (error) {
+        shortages = [];
+    }
+
+    if (shortages.length === 0) {
+        form.dataset.stockChecked = '1';
+        form.requestSubmit();
+        return;
+    }
+
+    pendingStockForm = form;
+    const list = document.getElementById('stockShortageList');
+    if (list) {
+        list.innerHTML = '';
+        shortages.forEach((row) => {
+            const li = document.createElement('li');
+            li.textContent = `${row.label} ${row.name}: нужни ${row.needed} ${row.unit}, налични ${row.available} — липсват ${row.missing} ${row.unit}`;
+            list.appendChild(li);
+        });
+    }
+    const modalEl = document.getElementById('stockShortageModal');
+    if (modalEl) {
+        bootstrap.Modal.getOrCreateInstance(modalEl).show();
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    const confirmBtn = document.getElementById('stockShortageConfirmBtn');
+    if (!confirmBtn) return;
+    confirmBtn.addEventListener('click', () => {
+        const form = pendingStockForm;
+        pendingStockForm = null;
+        const modalEl = document.getElementById('stockShortageModal');
+        if (modalEl) {
+            bootstrap.Modal.getOrCreateInstance(modalEl).hide();
+        }
+        if (!form) return;
+        const confirmed = form.querySelector('[name="stock_confirmed"]');
+        if (confirmed) confirmed.value = '1';
+        form.requestSubmit();
+    });
+});
+
+// --- Статус с един клик: Готова / Платена / Получена ---
+const STATUS_LABELS = {
+    ready: ['Готова', 'В работа'],
+    paid: ['Платена', 'Неплатена'],
+    collected: ['Получена', 'Неполучена'],
+};
+
+function statusButtonsHtml(data) {
+    const values = { ready: Boolean(data.ready), paid: Boolean(data.paid), collected: Boolean(data.collected) };
+    return `<div class="status-btns flex-row flex-wrap">${Object.entries(STATUS_LABELS).map(([field, [on, off]]) => `
+        <button type="button" class="status-btn status-btn--${field} ${values[field] ? 'is-on' : 'is-off'}"
+            data-status-field="${field}" data-status-value="${values[field] ? '1' : '0'}">
+            <i class="fas ${values[field] ? 'fa-check' : 'fa-circle'}"></i> ${values[field] ? on : off}
+        </button>`).join('')}</div>`;
+}
+
+function renderViewOrderStatus(orderId, data) {
+    const statusEl = document.getElementById('viewOrderStatus');
+    if (!statusEl) return;
+    statusEl.dataset.orderId = orderId;
+    statusEl.innerHTML = statusButtonsHtml(data);
+}
+
+async function toggleOrderStatus(orderId, field, value, button) {
+    button?.classList.add('is-busy');
+    const body = new FormData();
+    body.append('order_id', orderId);
+    body.append('field', field);
+    body.append('value', value ? '1' : '0');
+    try {
+        const response = await fetch(`${window.BASE_PATH}/api/order_status`, {
+            method: 'POST',
+            body,
+            credentials: 'same-origin',
+            headers: { Accept: 'application/json' },
+        });
+        if (response.status === 401 && typeof showSessionLoginModal === 'function') {
+            showSessionLoginModal(null);
+            return;
+        }
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+            showOrdersToast(data.message || 'Статусът не е сменен.', 'danger');
+            return;
+        }
+        const row = document.querySelector(`.order-row[data-order-id="${orderId}"]`);
+        const label = `${data.order.order_number}${data.order.sub_order_number > 0 ? '.' + data.order.sub_order_number : ''}`;
+        if (data.archived) {
+            row?.remove();
+            showOrdersToast(`Поръчка № ${label} е платена и получена — преместена е в архива.`, 'info');
+        } else if (row && data.html) {
+            const newRow = rowFromSyncHtml(data.html);
+            if (newRow) {
+                row.replaceWith(newRow);
+                bindSingleOrderRow(newRow);
+            }
+        }
+        const statusEl = document.getElementById('viewOrderStatus');
+        if (statusEl && statusEl.dataset.orderId === String(orderId)) {
+            renderViewOrderStatus(orderId, data.order);
+        }
+        applyOrderRowVisibility();
+        if (field === 'ready' && value) {
+            const toast = showOrdersToast(
+                `<span>Поръчка № ${label} е готова.</span> <button type="button" class="btn btn-sm btn-primary">Уведоми клиента</button>`,
+                'warning',
+                10000
+            );
+            toast.querySelector('button').addEventListener('click', () => {
+                toast.remove();
+                openNotifyModal(orderId, 'ready');
+            });
+        }
+    } catch (error) {
+        showOrdersToast('Няма връзка със сървъра.', 'danger');
+    } finally {
+        button?.classList.remove('is-busy');
+    }
+}
+
+document.addEventListener('click', (event) => {
+    const button = event.target.closest('.status-btn');
+    if (!button) return;
+    event.stopPropagation();
+    const holder = button.closest('[data-order-id]');
+    const orderId = holder?.dataset.orderId;
+    if (!orderId) return;
+    const field = button.dataset.statusField;
+    const turnOn = button.dataset.statusValue !== '1';
+    const scope = button.closest('.status-btns');
+    if (field === 'ready' && !turnOn && scope?.querySelector('.status-btn--collected.is-on')) {
+        if (!confirm('Поръчката е маркирана като получена. Да махна ли и „Получена“?')) return;
+    }
+    toggleOrderStatus(orderId, field, turnOn, button);
+}, true);
+
+// --- Клиенти: подсказки по име или телефон ---
+function initCustomerLookup(form) {
+    const inputs = form.querySelectorAll('.customer-lookup-input');
+    const idInput = form.querySelector('[name="customer_id"]');
+    if (inputs.length === 0 || !idInput) return;
+    let timer = null;
+    let box = null;
+    const closeBox = () => { box?.remove(); box = null; };
+    const pick = (customer) => {
+        form.querySelector('[name="customer_name"]').value = customer.name;
+        form.querySelector('[name="customer_phone"]').value = customer.phone || '';
+        const email = form.querySelector('[name="customer_email"]');
+        if (email && customer.email) email.value = customer.email;
+        idInput.value = customer.id;
+        closeBox();
+        form.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+    inputs.forEach((input) => {
+        input.addEventListener('input', () => {
+            idInput.value = '';
+            clearTimeout(timer);
+            const q = input.value.trim();
+            if (q.length < 2) { closeBox(); return; }
+            timer = setTimeout(async () => {
+                try {
+                    const response = await fetch(`${window.BASE_PATH}/api/customers?q=${encodeURIComponent(q)}`, {
+                        credentials: 'same-origin',
+                        headers: { Accept: 'application/json' },
+                    });
+                    const data = await response.json();
+                    closeBox();
+                    if (!data.customers || data.customers.length === 0 || document.activeElement !== input) return;
+                    box = document.createElement('div');
+                    box.className = 'customer-suggest';
+                    data.customers.forEach((c) => {
+                        const b = document.createElement('button');
+                        b.type = 'button';
+                        const strong = document.createElement('strong');
+                        strong.textContent = c.name;
+                        const small = document.createElement('small');
+                        small.textContent = [c.phone, c.email, `${c.orders_count} поръчки`, c.last_order ? `последна ${c.last_order}` : '']
+                            .filter(Boolean).join(' · ');
+                        b.appendChild(strong);
+                        b.appendChild(document.createElement('br'));
+                        b.appendChild(small);
+                        b.addEventListener('mousedown', (e) => { e.preventDefault(); pick(c); });
+                        box.appendChild(b);
+                    });
+                    input.closest('.customer-lookup').appendChild(box);
+                } catch (error) {
+                    closeBox();
+                }
+            }, 250);
+        });
+        input.addEventListener('blur', () => setTimeout(closeBox, 150));
+        input.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeBox(); });
+    });
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('.order-form').forEach((form) => initCustomerLookup(form));
 });

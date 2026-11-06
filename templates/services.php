@@ -5,7 +5,8 @@ $edit_mode = !empty($edit_mode);
 $categoryLabels = [
     'frame_labor' => 'Изработка на рамки',
     'passepartout_labor' => 'Изработка на паспарту',
-    'discounts' => 'Отстъпки и доплащания',
+    'discounts' => 'Спешни поръчки',
+    'subframes' => 'Подрамки',
     'general' => 'Общи',
     'glass_labor' => 'Стъкло',
     'assembly' => 'Монтаж',
@@ -14,7 +15,9 @@ $categoryLabels = [
     'hardware' => 'Дребно',
     'frame_labor_svc' => 'Изработка рамка',
 ];
-$unitLabels = ['piece' => 'бр.', 'sqm' => 'кв.м.', 'lm' => 'л.м.', 'km' => 'км'];
+$unitLabels = ['piece' => 'бр.', 'sqm' => 'кв.м', 'lm' => 'л.м.', 'km' => 'км', 'manual' => 'договорена'];
+$serviceSections = service_category_definitions();
+$currentServiceSection = null;
 $laborCategories = array_filter(
     $pricing_settings,
     static fn(string $category): bool => $category !== 'passepartout_material',
@@ -164,7 +167,7 @@ $price_list_rules = $price_list_rules ?? [];
 <div class="card mb-4">
     <div class="card-header">
         <strong>Допълнителни услуги</strong>
-        <span class="badge bg-primary">по избор в поръчка</span>
+        <span class="badge bg-secondary">по избор в поръчка</span>
     </div>
     <div class="card-body p-0">
         <table class="table table-sm mb-0">
@@ -178,8 +181,22 @@ $price_list_rules = $price_list_rules ?? [];
             </thead>
             <tbody>
                 <?php foreach ($services as $service): ?>
-                <tr>
-                    <td><?= e($service['name']) ?></td>
+                <?php $section = array_key_exists($service['category'] ?? '', $serviceSections) ? $service['category'] : 'other'; ?>
+                <?php if ($section !== $currentServiceSection): $currentServiceSection = $section; ?>
+                <tr class="table-light">
+                    <th colspan="4"><?= e($serviceSections[$section]) ?></th>
+                </tr>
+                <?php endif; ?>
+                <tr class="<?= isset($service['is_active']) && !(int)$service['is_active'] ? 'text-muted' : '' ?>">
+                    <td>
+                        <?= e($service['name']) ?>
+                        <?php if (isset($service['is_active']) && !(int)$service['is_active']): ?>
+                        <span class="badge text-bg-light border">не се предлага</span>
+                        <?php endif; ?>
+                        <?php if (trim((string)($service['note'] ?? '')) !== ''): ?>
+                        <div class="small text-muted"><?= e($service['note']) ?></div>
+                        <?php endif; ?>
+                    </td>
                     <td style="width: 9rem;">
                         <?php if ($edit_mode): ?>
                         <div class="input-group input-group-sm">

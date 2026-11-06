@@ -15,8 +15,12 @@ function get_db_connection(): PDO
             $dsn = "mysql:host={$host};port={$port};dbname={$name};charset=utf8mb4";
             $pdo = new PDO($dsn, $user, $pass);
         } else {
-            $dbPath = ROOT_PATH . '/database.db';
+            $dbPath = ($_ENV['DB_SQLITE_PATH'] ?? '') !== '' ? $_ENV['DB_SQLITE_PATH'] : ROOT_PATH . '/database.db';
             $pdo = new PDO('sqlite:' . $dbPath);
+            // Вграденият LOWER() в SQLite не работи за кирилица (MySQL сравнява без значение от главни/малки).
+            if (method_exists($pdo, 'sqliteCreateFunction')) {
+                $pdo->sqliteCreateFunction('lower', static fn ($v) => $v === null ? null : mb_strtolower((string)$v, 'UTF-8'), 1);
+            }
         }
 
         $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
@@ -271,6 +275,25 @@ function ensure_catalog_schema(PDO $conn): void
         'carry_floors' => $isMysql ? 'INT UNSIGNED NULL' : 'INTEGER',
         'additional_passepartouts' => $isMysql ? 'VARCHAR(500) NULL' : 'TEXT',
         'passepartout_reveal_cm' => $isMysql ? 'VARCHAR(120) NULL' : 'TEXT',
+        // migration_009_order_form_2026
+        'frame_measure' => $isMysql ? "VARCHAR(20) NOT NULL DEFAULT ''" : "TEXT NOT NULL DEFAULT ''",
+        'field_margin_all' => $isMysql ? 'DECIMAL(10,2) NULL' : 'REAL',
+        'field_margin_l' => $isMysql ? 'DECIMAL(10,2) NULL' : 'REAL',
+        'field_margin_r' => $isMysql ? 'DECIMAL(10,2) NULL' : 'REAL',
+        'field_margin_t' => $isMysql ? 'DECIMAL(10,2) NULL' : 'REAL',
+        'field_margin_b' => $isMysql ? 'DECIMAL(10,2) NULL' : 'REAL',
+        'passepartout_layers' => $isMysql ? 'TEXT NULL' : 'TEXT',
+        'passepartout_bg_offsets' => $isMysql ? 'VARCHAR(255) NULL' : 'TEXT',
+        'hanger_count' => $isMysql ? 'INT UNSIGNED NULL' : 'INTEGER',
+        'extra_services_manual' => $isMysql ? 'TEXT NULL' : 'TEXT',
+        'subframe_thickness' => $isMysql ? "VARCHAR(10) NOT NULL DEFAULT ''" : "TEXT NOT NULL DEFAULT ''",
+        'subframe_manual_price' => $isMysql ? 'DECIMAL(10,2) NULL' : 'REAL',
+        'spacer_profile' => $isMysql ? 'VARCHAR(255) NULL' : 'TEXT',
+        'box_subframe_gap_cm' => $isMysql ? 'DECIMAL(10,2) NULL' : 'REAL',
+        'canvas_support_note' => $isMysql ? 'VARCHAR(80) NULL' : 'TEXT',
+        'complex_order_percent' => $isMysql ? 'DECIMAL(10,2) NULL' : 'REAL',
+        'stock_override' => $isMysql ? 'TINYINT(1) NOT NULL DEFAULT 0' : 'INTEGER NOT NULL DEFAULT 0',
+        'stock_shortage' => $isMysql ? 'TEXT NULL' : 'TEXT',
     ];
     foreach ($orderExtraColumns as $column => $type) {
         if (!table_has_column($conn, 'orders', $column)) {
@@ -278,14 +301,67 @@ function ensure_catalog_schema(PDO $conn): void
         }
     }
 
+    ensure_catalog_sort_schema($conn);
+    ensure_passepartout_tier_pricing_schema($conn);
     ensure_price_list_rules_schema($conn);
     ensure_hanging_weight_tiers_schema($conn);
     seed_price_list_catalog($conn);
-    ensure_passepartout_tier_pricing_schema($conn);
     ensure_painting_reservations_schema($conn);
     migrate_service_display_names($conn);
     migrate_services_price_list_2026($conn);
     migrate_hanging_options_2026($conn);
+    migrate_order_form_2026($conn);
+    ensure_workflow_schema($conn);
+}
+
+/** Display order + active flag for catalog lists (migration_009). */
+function ensure_catalog_sort_schema(PDO $conn): void
+{
+    $isMysql = $conn->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql';
+    $sortType = $isMysql ? 'INT NOT NULL DEFAULT 100' : 'INTEGER NOT NULL DEFAULT 100';
+    foreach (['glasses', 'backs', 'hanging_options', 'services'] as $table) {
+        if (!table_has_column($conn, $table, 'sort_order')) {
+            $conn->exec("ALTER TABLE {$table} ADD COLUMN sort_order {$sortType}");
+        }
+    }
+    if (!table_has_column($conn, 'services', 'is_active')) {
+        $type = $isMysql ? 'TINYINT(1) NOT NULL DEFAULT 1' : 'INTEGER NOT NULL DEFAULT 1';
+        $conn->exec("ALTER TABLE services ADD COLUMN is_active {$type}");
+    }
+    if (!table_has_column($conn, 'services', 'note')) {
+        $type = $isMysql ? 'VARCHAR(255) NULL' : 'TEXT';
+        $conn->exec("ALTER TABLE services ADD COLUMN note {$type}");
+    }
+
+    if ($isMysql) {
+        $conn->exec('
+            CREATE TABLE IF NOT EXISTS schema_migrations (
+                name VARCHAR(100) PRIMARY KEY,
+                applied_at DATETIME NOT NULL
+            ) ENGINE=InnoDB
+        ');
+    } else {
+        $conn->exec('
+            CREATE TABLE IF NOT EXISTS schema_migrations (
+                name TEXT PRIMARY KEY,
+                applied_at TEXT NOT NULL
+            )
+        ');
+    }
+}
+
+function schema_migration_applied(PDO $conn, string $name): bool
+{
+    $stmt = $conn->prepare('SELECT COUNT(*) FROM schema_migrations WHERE name = ?');
+    $stmt->execute([$name]);
+
+    return (int)$stmt->fetchColumn() > 0;
+}
+
+function mark_schema_migration_applied(PDO $conn, string $name): void
+{
+    $conn->prepare('INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)')
+        ->execute([$name, date('Y-m-d H:i:s')]);
 }
 
 function ensure_painting_reservations_schema(PDO $conn): void

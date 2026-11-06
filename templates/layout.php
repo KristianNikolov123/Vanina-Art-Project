@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="<?= e(csrf_token()) ?>">
     <title><?= e($title ?? '') ?> - Ванина Арт</title>
     <meta name="color-scheme" content="light">
     <meta name="supported-color-schemes" content="light">
@@ -26,6 +27,11 @@
             caret-color: #000;
             background-color: #fff;
         }
+        /* Прозорци върху отворена форма (вход при изтекла сесия, недостатъчна наличност). */
+        #sessionLoginModal, #stockShortageModal { z-index: 1075; }
+        .modal-backdrop.show ~ .modal-backdrop.show { z-index: 1070; }
+        .admin-quiet-link { font-size: 0.72rem; color: #adb5bd; text-decoration: none; }
+        .admin-quiet-link:hover { color: #6c757d; text-decoration: underline; }
     </style>
 </head>
 <body class="<?= e($body_class ?? '') ?>">
@@ -50,6 +56,13 @@
                             <i class="fas fa-list"></i> Поръчки
                         </a>
                     </li>
+                    <?php if ($current_user): ?>
+                    <li class="nav-item">
+                        <a class="nav-link <?= $current_page === 'customers' ? 'active' : '' ?>" href="<?= url_for('customers') ?>">
+                            <i class="fas fa-users"></i> Клиенти
+                        </a>
+                    </li>
+                    <?php endif; ?>
                     <li class="nav-item dropdown">
                         <a class="nav-link dropdown-toggle <?= is_inventory_page($current_page ?? '') ? 'active' : '' ?>"
                            href="#" role="button" data-bs-toggle="dropdown">
@@ -117,6 +130,12 @@
         <?= $content ?>
     </div>
 
+    <?php if ($current_user && User::isAdminEmail($current_user->email)): ?>
+    <div class="container text-end my-3">
+        <a class="admin-quiet-link" href="<?= url_for('used_materials') ?>">Използвани материали</a>
+    </div>
+    <?php endif; ?>
+
     <?php if (!$current_user && !in_array($current_page, ['login', 'signup'])): ?>
     <div class="login-overlay" id="loginOverlay">
         <div class="login-modal">
@@ -130,8 +149,14 @@
     </div>
     <?php endif; ?>
 
-    <script>window.BASE_PATH = '<?= BASE_PATH ?>';</script>
+    <script>
+        window.BASE_PATH = '<?= BASE_PATH ?>';
+        window.CURRENT_USER_ID = <?= $current_user ? (int)$current_user->id : 'null' ?>;
+    </script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <?php if ($current_user): ?>
+    <script src="<?= static_url('js/session-guard.js') ?>"></script>
+    <?php endif; ?>
     <?php
     $extraJsFiles = is_array($extra_js ?? null) ? $extra_js : (($extra_js ?? '') !== '' ? [$extra_js] : []);
     foreach ($extraJsFiles as $jsFile):

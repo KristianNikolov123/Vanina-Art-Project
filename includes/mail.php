@@ -1,6 +1,6 @@
 <?php
 
-function send_verification_email_to_admin(string $newUserEmail, string $newUserUsername): bool
+function send_verification_email_to_admin(string $newUserEmail, string $newUserUsername, string $verifyToken): bool
 {
     if (!ADMIN_EMAIL) {
         return false;
@@ -11,7 +11,7 @@ function send_verification_email_to_admin(string $newUserEmail, string $newUserU
         return false;
     }
 
-    $verifyUrl = full_url('/verify/' . urlencode($newUserEmail));
+    $verifyUrl = full_url('/verify/' . $verifyToken);
     $subject = 'Нова заявка за регистрация - Ванина Арт';
     $body = "Нов потребител иска да се регистрира:\n"
         . "Потребителско име: {$newUserUsername}\n"

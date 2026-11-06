@@ -1,7 +1,7 @@
 function confirmDelete(profileId) {
     if (confirm('Сигурни ли сте, че искате да изтриете този профил?')) {
         saveProfileListViewState();
-        window.location.href = `${window.BASE_PATH}/delete_profile/${profileId}`;
+        postNavigate(`${window.BASE_PATH}/delete_profile/${profileId}`);
     }
 }
 

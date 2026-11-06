@@ -1,9 +1,5 @@
 <?php
 
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
-
 define('ROOT_PATH', dirname(__DIR__));
 
 $envFile = ROOT_PATH . '/.env';
@@ -16,9 +12,28 @@ if (file_exists($envFile)) {
         }
         if (strpos($line, '=') !== false) {
             [$key, $value] = explode('=', $line, 2);
-            $_ENV[trim($key)] = trim($value, " \t\n\r\0\x0B\"'");
+            $key = trim($key);
+            // Real environment variables (e.g. in tests) take precedence over .env.
+            if (getenv($key) !== false) {
+                $_ENV[$key] = getenv($key);
+                continue;
+            }
+            $_ENV[$key] = trim($value, " \t\n\r\0\x0B\"'");
         }
     }
+}
+foreach (['DB_DRIVER', 'DB_SQLITE_PATH', 'SESSION_IDLE_TIMEOUT_MINUTES'] as $envKey) {
+    if (!isset($_ENV[$envKey]) && getenv($envKey) !== false) {
+        $_ENV[$envKey] = getenv($envKey);
+    }
+}
+
+require_once ROOT_PATH . '/includes/session.php';
+require_once ROOT_PATH . '/includes/security.php';
+
+configure_session_lifetime();
+if (session_status() === PHP_SESSION_NONE && PHP_SAPI !== 'cli') {
+    session_start();
 }
 
 define('BASE_PATH', rtrim($_ENV['BASE_PATH'] ?? '', '/'));
@@ -37,6 +52,11 @@ require_once ROOT_PATH . '/includes/helpers.php';
 require_once ROOT_PATH . '/includes/catalog.php';
 require_once ROOT_PATH . '/includes/pricing.php';
 require_once ROOT_PATH . '/includes/inventory.php';
+require_once ROOT_PATH . '/includes/reports.php';
 require_once ROOT_PATH . '/includes/mail.php';
+
+if (session_status() === PHP_SESSION_ACTIVE) {
+    enforce_session_idle_timeout();
+}
 
 init_db();

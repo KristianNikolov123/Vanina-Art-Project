@@ -1,6 +1,6 @@
 function confirmDelete(glassId) {
     if (confirm('Сигурни ли сте, че искате да изтриете това стъкло?')) {
-        window.location.href = `${window.BASE_PATH}/delete_glass/${glassId}`;
+        postNavigate(`${window.BASE_PATH}/delete_glass/${glassId}`);
     }
 }
 

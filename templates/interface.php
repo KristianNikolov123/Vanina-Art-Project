@@ -2,6 +2,12 @@
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h1>Поръчки</h1>
         <div class="d-flex gap-2">
+            <a href="<?= url_for('reminders') ?>" class="btn btn-outline-secondary position-relative">
+                <i class="fas fa-bell"></i> Напомняния
+                <?php if (($reminders_count ?? 0) > 0): ?>
+                <span class="badge rounded-pill text-bg-danger ms-1"><?= (int)$reminders_count ?></span>
+                <?php endif; ?>
+            </a>
             <a href="<?= url_for('archives') ?>" class="btn btn-outline-secondary">
                 <i class="fas fa-archive"></i> Архив
             </a>
@@ -50,6 +56,10 @@
         </div>
         <div class="orders-toolbar__filters">
             <button type="button" class="btn btn-outline-secondary orders-toolbar__filter-all active" data-filter="all">Всички</button>
+            <div class="btn-group orders-toolbar__filter-group" role="group" aria-label="Изработка">
+                <button type="button" class="btn btn-outline-secondary" data-filter="in_progress" data-filter-group="work">В работа</button>
+                <button type="button" class="btn btn-outline-warning" data-filter="ready" data-filter-group="work">Готови</button>
+            </div>
             <div class="btn-group orders-toolbar__filter-group" role="group" aria-label="Плащане">
                 <button type="button" class="btn btn-outline-success" data-filter="paid" data-filter-group="payment">Платени</button>
                 <button type="button" class="btn btn-outline-danger" data-filter="unpaid" data-filter-group="payment">Неплатени</button>
@@ -63,7 +73,11 @@
 
     <script>
         window.PASSEPARTOUT_MAP = <?= json_encode(array_column($passepartouts, 'id', 'name'), JSON_UNESCAPED_UNICODE) ?>;
-        window.SERVICES_MAP = <?= json_encode(array_column($services ?? [], 'name', 'id'), JSON_UNESCAPED_UNICODE) ?>;
+        window.SERVICES_MAP = <?= json_encode($services_name_map ?? array_column($services ?? [], 'name', 'id'), JSON_UNESCAPED_UNICODE) ?>;
+        window.PROFILE_STOCK = <?= json_encode(
+            array_map(static fn ($p) => ['price' => (float)$p['price'], 'stock' => (float)($p['stock'] ?? 0)], array_column($profiles ?? [], null, 'name')),
+            JSON_UNESCAPED_UNICODE
+        ) ?>;
         <?php
         $artworkTypeLabels = artwork_type_options();
         unset($artworkTypeLabels['']);
@@ -72,7 +86,7 @@
         window.ORDERS_SYNC_REVISION = <?= json_encode($orders_sync_revision ?? '', JSON_UNESCAPED_UNICODE) ?>;
     </script>
     <?php
-    $servicesById = array_column($services ?? [], 'name', 'id');
+    $servicesById = $services_name_map ?? array_column($services ?? [], 'name', 'id');
     $workloadChart = $workloadChart ?? ['days' => [], 'max' => 1];
     include __DIR__ . '/partials/orders_workload_chart.php';
     ?>
@@ -89,6 +103,7 @@
                             <th>Профил</th>
                             <th>Доп. профил</th>
                             <th>Брой рамки</th>
+                            <th title="Допълнителни услуги">Доп. услуги</th>
                             <th>Описание</th>
                             <th>Стъкло</th>
                             <th>Гръб</th>

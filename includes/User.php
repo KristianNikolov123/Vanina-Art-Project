@@ -46,29 +46,55 @@ class User
         return password_verify($password, $this->password_hash);
     }
 
-    public static function create(string $username, string $email, string $password): bool
+    /** Връща токена за потвърждение или null при дублиран потребител/имейл. */
+    public static function create(string $username, string $email, string $password): ?string
     {
         try {
             $conn = get_db_connection();
             $passwordHash = password_hash($password, PASSWORD_DEFAULT);
-            $stmt = $conn->prepare('INSERT INTO users (username, email, password_hash, is_verified) VALUES (?, ?, ?, 0)');
-            $stmt->execute([$username, $email, $passwordHash]);
-            return true;
+            $token = bin2hex(random_bytes(32));
+            $stmt = $conn->prepare('INSERT INTO users (username, email, password_hash, is_verified, verify_token) VALUES (?, ?, ?, 0, ?)');
+            $stmt->execute([$username, $email, $passwordHash, $token]);
+            return $token;
         } catch (PDOException $e) {
-            return false;
+            return null;
         }
     }
 
-    public static function verifyUser(string $email): bool
+    /** Потвърждение само с таен токен от имейла до администратора (не по имейл адрес). */
+    public static function verifyByToken(string $token): bool
     {
-        try {
-            $conn = get_db_connection();
-            $stmt = $conn->prepare('UPDATE users SET is_verified = 1 WHERE email = ?');
-            $stmt->execute([$email]);
-            return true;
-        } catch (PDOException $e) {
+        if (!preg_match('/^[a-f0-9]{64}$/', $token)) {
             return false;
         }
+        $conn = get_db_connection();
+        $stmt = $conn->prepare('UPDATE users SET is_verified = 1, verify_token = NULL WHERE verify_token = ? AND is_verified = 0');
+        $stmt->execute([$token]);
+
+        return $stmt->rowCount() > 0;
+    }
+
+    public static function getPendingUsers(): array
+    {
+        $conn = get_db_connection();
+
+        return $conn->query('SELECT id, username, email, created_at FROM users WHERE is_verified = 0 ORDER BY created_at DESC')->fetchAll();
+    }
+
+    public static function approve(int $userId): bool
+    {
+        $stmt = get_db_connection()->prepare('UPDATE users SET is_verified = 1, verify_token = NULL WHERE id = ? AND is_verified = 0');
+        $stmt->execute([$userId]);
+
+        return $stmt->rowCount() > 0;
+    }
+
+    public static function reject(int $userId): bool
+    {
+        $stmt = get_db_connection()->prepare('DELETE FROM users WHERE id = ? AND is_verified = 0');
+        $stmt->execute([$userId]);
+
+        return $stmt->rowCount() > 0;
     }
 
     public static function logLogin(int $userId, string $username): bool

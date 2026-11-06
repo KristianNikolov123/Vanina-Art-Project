@@ -1,6 +1,9 @@
 let currentViewOrderId = null;
 
 function buildOrderExtrasLabels(data) {
+    if (Array.isArray(data.extras_labels)) {
+        return data.extras_labels;
+    }
     const labels = [];
     const servicesMap = window.SERVICES_MAP || {};
 
@@ -91,7 +94,7 @@ function viewOrder(orderId) {
             || '—';
     }
     document.getElementById('viewOrderSize').textContent = data.width && data.height
-        ? `${data.width} × ${data.height} cm`
+        ? `${data.width} × ${data.height} см`
         : '—';
     document.getElementById('viewOrderFrameCount').textContent = displayValue(data.frame_count ?? 1);
     document.getElementById('viewOrderProfile').textContent = displayValue(data.profile);
@@ -111,7 +114,7 @@ function viewOrder(orderId) {
 
     let passepartoutText = displayValue(data.passepartout);
     if (data.passepartout_bill_width && data.passepartout_bill_height) {
-        passepartoutText += ` (фактурирано: ${data.passepartout_bill_width}×${data.passepartout_bill_height} cm)`;
+        passepartoutText += ` (фактурирано: ${data.passepartout_bill_width}×${data.passepartout_bill_height} см)`;
     }
     document.getElementById('viewOrderPassepartout').textContent = passepartoutText;
 
@@ -162,6 +165,8 @@ function viewOrder(orderId) {
     if (editBtn) {
         editBtn.style.display = window.ARCHIVE_PAGE ? 'none' : '';
     }
+    const printClient = document.getElementById('viewOrderPrintClient');
+    if (printClient) printClient.href = `${window.BASE_PATH}/order_print/${orderId}`;
 
     const modal = new bootstrap.Modal(document.getElementById('viewOrderModal'));
     modal.show();

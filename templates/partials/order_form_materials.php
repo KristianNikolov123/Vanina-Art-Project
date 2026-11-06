@@ -7,26 +7,36 @@ $hanging_options = $hanging_options ?? [];
 $additionalProfilesId = $additionalProfilesId ?? 'additionalProfiles';
 $additionalPassepartoutsId = $additionalProfilesId . '_extraPp';
 
-$hangingPackages = [];
-$hangerAddons = [];
-foreach ($hanging_options as $option) {
-    $name = $option['name'] ?? '';
-    if (str_starts_with($name, 'Закачалка')) {
-        $hangerAddons[] = $option;
-    } elseif ($name !== '' && !in_array($name, ['Връзка', 'Две закачалки', 'Закачалка'], true)) {
-        $hangingPackages[] = $option;
-    }
-}
-if ($hangingPackages === []) {
-    $hangingPackages = array_filter($hanging_options, static fn ($o) => ($o['name'] ?? '') !== '');
-}
+$hangingSplit = split_hanging_options_for_form($hanging_options);
+$hangingPackages = $hangingSplit['packages'];
+$hangerAddons = $hangingSplit['hangers'];
+
+/** Четири малки клетки Л/Д/Г/Д + „отвсякъде“. */
+$renderSideInputs = static function (string $prefix, bool $asArray, string $allLabel, string $allTitle): void {
+    $suffix = $asArray ? '[]' : '';
+    $cells = [
+        'all' => [$allLabel, $allTitle],
+        'l' => ['Л', 'Ляво (см)'],
+        'r' => ['Д', 'Дясно (см)'],
+        't' => ['Г', 'Горе (см)'],
+        'b' => ['Дол', 'Долу (см)'],
+    ];
+    foreach ($cells as $key => [$label, $title]): ?>
+        <div class="side-cell<?= $key === 'all' ? ' side-cell--all' : '' ?>">
+            <label class="form-label small text-muted mb-0"><?= e($label) ?></label>
+            <input type="text" inputmode="decimal" autocomplete="off" maxlength="5"
+                class="form-control form-control-sm order-price-trigger side-input"
+                name="<?= e($prefix . $key . $suffix) ?>" title="<?= e($title) ?>" placeholder="см">
+        </div>
+    <?php endforeach;
+};
 ?>
 <div class="row g-2 order-form-row-2">
-    <div class="col-md-8 mb-3">
+    <div class="col-md-4 mb-2">
         <label class="form-label">Профил</label>
         <div class="input-group">
             <input type="text" class="form-control order-price-trigger" name="profile" list="profileCatalog">
-            <button type="button" class="btn btn-outline-secondary" onclick="addProfileField('<?= e($additionalProfilesId) ?>')">
+            <button type="button" class="btn btn-outline-secondary" onclick="addProfileField('<?= e($additionalProfilesId) ?>')" title="Добави профил">
                 <i class="fas fa-plus"></i>
             </button>
         </div>
@@ -44,9 +54,26 @@ if ($hangingPackages === []) {
             </div>
         </div>
     </div>
-    <div class="col-md-4 mb-3">
+    <div class="col-md-2 mb-2">
         <label class="form-label">Брой рамки</label>
         <input type="text" inputmode="decimal" autocomplete="off" class="form-control order-price-trigger" name="frame_count" value="1" min="1">
+    </div>
+    <div class="col-md-3 mb-2">
+        <label class="form-label text-nowrap" title="Как е измерен размерът">Изисквания към рамката</label>
+        <select class="form-select order-price-trigger" name="frame_measure">
+            <?php foreach (frame_measure_options() as $value => $label): ?>
+            <option value="<?= e($value) ?>"><?= e($label) ?></option>
+            <?php endforeach; ?>
+        </select>
+    </div>
+    <div class="col-md-3 mb-2">
+        <label class="form-label">Нестандартна фигура</label>
+        <select class="form-select order-price-trigger" name="frame_shape">
+            <?php foreach (frame_shape_options() as $value => $label): ?>
+            <option value="<?= e($value) ?>"><?= e($label) ?></option>
+            <?php endforeach; ?>
+            <option value="circle_24" hidden>Кръг 24 страни (стара поръчка)</option>
+        </select>
     </div>
 </div>
 <datalist id="profileCatalog">
@@ -61,7 +88,7 @@ if ($hangingPackages === []) {
 </datalist>
 
 <div class="row g-2 order-form-row-3">
-    <div class="col-md-6 mb-3">
+    <div class="col-md-6 mb-2">
         <label class="form-label">Стъкло</label>
         <select class="form-select order-price-trigger" name="glass">
             <option value=""></option>
@@ -70,7 +97,7 @@ if ($hangingPackages === []) {
             <?php endforeach; ?>
         </select>
     </div>
-    <div class="col-md-6 mb-3">
+    <div class="col-md-6 mb-2">
         <label class="form-label">Гръб</label>
         <select class="form-select order-price-trigger" name="back">
             <option value=""></option>
@@ -81,114 +108,111 @@ if ($hangingPackages === []) {
     </div>
 </div>
 
-<div class="order-passepartout-block mb-3">
+<div class="order-passepartout-block mb-2">
     <div class="row g-2 align-items-end mb-2">
-        <div class="col-md-6">
+        <div class="col-md-5">
             <label class="form-label">Паспарту / фон</label>
             <select class="form-select order-price-trigger passepartout-use-select" name="passepartout_use">
                 <?php foreach (passepartout_use_form_options() as $value => $label): ?>
                 <option value="<?= e($value) ?>"><?= e($label) ?></option>
                 <?php endforeach; ?>
+                <option value="field">Поле (+ паспарту по желание)</option>
             </select>
         </div>
     </div>
 
-    <div class="passepartout-mode-background d-none mb-2">
-        <label class="form-label">№ фон от склад</label>
-        <input type="text" class="form-control order-price-trigger passepartout-fond-only-input" name="passepartout"
-            list="passepartoutCatalog" autocomplete="off" placeholder="№ от склада">
-        <div class="form-text small">Само фон — без слоеве паспарту.</div>
+    <div class="passepartout-mode-field d-none border rounded p-2 mb-2">
+        <label class="form-label mb-0">Поле</label>
+        <div class="form-text small mt-0 mb-1">Откъде започва профилът/паспартуто, ако не е от края на картината. Общата стойност се разделя на 4 страни.</div>
+        <div class="side-cells field-margin-cells">
+            <?php $renderSideInputs('field_margin_', false, 'Общо', 'Общо (разделя се поравно на 4 страни)'); ?>
+        </div>
+    </div>
+
+    <div class="passepartout-mode-background d-none mb-2 border rounded p-2">
+        <div class="row g-2 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label small text-muted mb-0">№ фон</label>
+                <input type="text" class="form-control form-control-sm order-price-trigger passepartout-fond-only-input" name="passepartout"
+                    list="passepartoutCatalog" autocomplete="off" placeholder="№ от склада">
+            </div>
+            <div class="col-md-9">
+                <div class="side-cells">
+                    <?php $renderSideInputs('bg_', false, 'Отвсякъде', 'Отстояние от всяка страна (см)'); ?>
+                </div>
+            </div>
+        </div>
     </div>
 
     <div class="passepartout-mode-stack">
-    <p class="form-text small mt-0 mb-2">Слой <strong>1</strong> е най-горе (към стъкло), с «+» добавяте <strong>2, 3…</strong> надолу към произведението.</p>
+        <div class="passepartout-layers border rounded">
+            <div class="passepartout-layer passepartout-layer-primary p-2">
+                <div class="row g-2 align-items-end passepartout-layer-fields">
+                    <div class="col-md-3 col-12">
+                        <label class="form-label small text-muted mb-0">№ паспарту</label>
+                        <input type="text" class="form-control form-control-sm order-price-trigger passepartout-name-input" name="passepartout"
+                            list="passepartoutCatalog" autocomplete="off" placeholder="№ от склада">
+                    </div>
+                    <div class="col-md-8 col-10">
+                        <div class="side-cells">
+                            <?php $renderSideInputs('pp_', true, 'Отвсякъде', 'Размер на паспартуто от всяка страна (см)'); ?>
+                        </div>
+                    </div>
+                    <div class="col-md-1 col-2 d-grid">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="addPassepartoutField('<?= e($additionalPassepartoutsId) ?>')"
+                            title="Добави следващо паспарту">
+                            <i class="fas fa-plus"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div id="<?= e($additionalPassepartoutsId) ?>" class="passepartout-extra-layers"></div>
+        </div>
+        <div class="form-text small">Отстоянията (Л, Д, Г, Дол) увеличават размера на паспартуто спрямо картината; попълнените отделни клетки имат предимство пред „Отвсякъде“. Първият отвор е включен в цената.</div>
 
-    <div class="passepartout-layers border rounded">
-        <div class="passepartout-layer passepartout-layer-primary p-2 p-md-3">
-            <div class="d-flex align-items-center gap-2 mb-2">
-                <span class="badge rounded-pill text-bg-primary passepartout-layer-badge">1</span>
-                <span class="small fw-semibold passepartout-layer-title">Слой 1 — най-горе (към стъкло)</span>
-            </div>
-            <div class="row g-2 align-items-end passepartout-layer-fields">
-                <div class="col-6">
-                    <label class="form-label small text-muted mb-0">№ от склад</label>
-                    <input type="text" class="form-control order-price-trigger passepartout-name-input" name="passepartout"
-                        list="passepartoutCatalog" autocomplete="off" inputmode="text" placeholder="№ от склада">
+        <div class="passepartout-mode-both-fond border rounded p-2 mt-2 d-none">
+            <div class="row g-2 align-items-end">
+                <div class="col-md-3">
+                    <label class="form-label small text-muted mb-0">№ фон</label>
+                    <input type="text" class="form-control form-control-sm order-price-trigger" name="passepartout_background"
+                        list="passepartoutCatalog" autocomplete="off" placeholder="№ от склада">
                 </div>
-                <div class="col-4">
-                    <label class="form-label small text-muted mb-0">Отстъп</label>
-                    <input type="text" inputmode="decimal" autocomplete="off" class="form-control passepartout-reveal-input"
-                        name="passepartout_reveal[]" placeholder="см">
-                </div>
-                <div class="col-2 d-grid">
-                    <label class="form-label small text-muted mb-0 d-none d-md-block">&nbsp;</label>
-                    <button type="button" class="btn btn-outline-secondary" onclick="addPassepartoutField('<?= e($additionalPassepartoutsId) ?>')"
-                        title="Добави слой надолу (2, 3…)">
-                        <i class="fas fa-plus"></i>
-                    </button>
-                </div>
-            </div>
-            <div class="passepartout-zero-panel mt-2 pt-2 border-top border-light">
-                <div class="form-check mb-0">
-                    <input type="checkbox" class="form-check-input order-price-trigger" name="passepartout_zero"
-                        id="<?= e($additionalProfilesId) ?>_pp_zero">
-                    <label class="form-check-label" for="<?= e($additionalProfilesId) ?>_pp_zero">
-                        Нулево — само <strong>слой 1</strong> (най-горе, без материал)
-                    </label>
-                </div>
-                <div class="passepartout-zero-margins row g-2 mt-2 d-none">
-                    <div class="col-3 col-sm-3">
-                        <label class="form-label small mb-0">Л (см)</label>
-                        <input type="text" inputmode="decimal" autocomplete="off" class="form-control form-control-sm"
-                            name="passepartout_margin_l">
-                    </div>
-                    <div class="col-3 col-sm-3">
-                        <label class="form-label small mb-0">Д (см)</label>
-                        <input type="text" inputmode="decimal" autocomplete="off" class="form-control form-control-sm"
-                            name="passepartout_margin_r">
-                    </div>
-                    <div class="col-3 col-sm-3">
-                        <label class="form-label small mb-0">Г (см)</label>
-                        <input type="text" inputmode="decimal" autocomplete="off" class="form-control form-control-sm"
-                            name="passepartout_margin_t">
-                    </div>
-                    <div class="col-3 col-sm-3">
-                        <label class="form-label small mb-0">Д (см)</label>
-                        <input type="text" inputmode="decimal" autocomplete="off" class="form-control form-control-sm"
-                            name="passepartout_margin_b">
+                <div class="col-md-9">
+                    <div class="side-cells">
+                        <?php $renderSideInputs('bg_', false, 'Отвсякъде', 'Отстояние от всяка страна (см)'); ?>
                     </div>
                 </div>
             </div>
         </div>
-        <div id="<?= e($additionalPassepartoutsId) ?>" class="passepartout-extra-layers"></div>
     </div>
-
-    <div class="passepartout-mode-both-fond border rounded p-2 p-md-3 mt-2 d-none">
-        <label class="form-label mb-1">№ фон (долен лист под паспартутата)</label>
-        <input type="text" class="form-control order-price-trigger" name="passepartout_background"
-            list="passepartoutCatalog" autocomplete="off" placeholder="№ от склада">
-    </div>
-    </div>
+    <div class="small text-muted mt-1 order-geometry-hint"></div>
 </div>
 
 <div class="row g-2 order-form-row-hanging">
-    <div class="col-md-6 mb-3">
+    <div class="col-md-6 mb-2">
         <label class="form-label">Окачване</label>
         <select class="form-select order-price-trigger" name="hanging" id="<?= e($additionalProfilesId) ?>_hanging">
             <option value=""></option>
             <?php foreach ($hangingPackages as $option): ?>
-            <option value="<?= e($option['name']) ?>"><?= e($option['name']) ?></option>
+            <option value="<?= e($option['name']) ?>"
+                data-needs-hangers="<?= hanging_package_requires_hangers($option['name']) ? '1' : '0' ?>">
+                <?= e($option['name']) ?><?= isset($option['price']) ? ' — ' . number_format((float)$option['price'], 2) . ' €' . (hanging_package_requires_hangers($option['name']) ? ' + закачалки' : '') : '' ?>
+            </option>
             <?php endforeach; ?>
         </select>
     </div>
-    <div class="col-md-6 mb-3">
+    <div class="col-md-4 mb-2">
         <label class="form-label">Закачалки</label>
         <select class="form-select order-price-trigger" name="hanger">
             <option value=""></option>
             <?php foreach ($hangerAddons as $option): ?>
-            <option value="<?= e($option['name']) ?>"><?= e($option['name']) ?></option>
+            <option value="<?= e($option['name']) ?>"><?= e(hanger_display_label($option['name'])) ?><?= isset($option['price']) ? ' — ' . number_format((float)$option['price'], 2) . ' €/бр.' : '' ?></option>
             <?php endforeach; ?>
         </select>
+    </div>
+    <div class="col-md-2 mb-2">
+        <label class="form-label">Бр. на рамка</label>
+        <input type="text" inputmode="numeric" autocomplete="off" class="form-control order-price-trigger" name="hanger_count" placeholder="2">
     </div>
 </div>
 

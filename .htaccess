@@ -1,5 +1,14 @@
 RewriteEngine On
 
+# --- Сигурност: забранен достъп до чувствителни файлове и папки ---
+# Скрити файлове (.env, .git, .vscode…), без .well-known (нужна за SSL сертификата).
+RewriteRule (^|/)\.(?!well-known(/|$)) - [F,L]
+# Бази данни, SQL, логове, резервни копия.
+RewriteRule \.(db|sqlite|sqlite3|sql|log|bak|ini|md|lock)$ - [F,L,NC]
+# Код и данни, които не трябва да се отварят директно от браузъра.
+RewriteRule ^(includes|templates|tests|database)(/|$) - [F,L]
+
+# --- Маршрути на приложението ---
 RewriteCond %{REQUEST_FILENAME} -f [OR]
 RewriteCond %{REQUEST_FILENAME} -d
 RewriteRule ^ - [L]

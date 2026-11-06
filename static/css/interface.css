@@ -499,7 +499,8 @@ html:has(body.page-orders) {
 
 .extra-service-item.area-tier-suggested .form-check-label {
     font-weight: 600;
-    color: #0d6efd;
+    color: #212529;
+    text-decoration: underline dotted #6c757d;
 }
 
 .order-form-modal.modal-dialog {
@@ -573,4 +574,238 @@ html:has(body.page-orders) {
 
 .order-form-modal .passepartout-zero-panel {
     border-color: rgba(0, 0, 0, 0.06) !important;
+}
+
+
+/* --- 2026-11: поле / паспарту отстояния --- */
+.side-cells {
+    display: grid;
+    grid-template-columns: minmax(4.6rem, 1.3fr) repeat(4, minmax(2.9rem, 1fr));
+    gap: 0.3rem;
+}
+
+.side-cell .form-label {
+    font-size: 0.7rem;
+    line-height: 1.1;
+}
+
+.side-cell .side-input {
+    padding-left: 0.3rem;
+    padding-right: 0.3rem;
+    text-align: center;
+    max-width: 4.6rem;
+}
+
+.side-cell--all .side-input {
+    max-width: 5.6rem;
+}
+
+.order-form-modal .passepartout-layer-additional .passepartout-layer-fields {
+    align-items: end;
+}
+
+.order-geometry-hint:empty {
+    display: none;
+}
+
+/* --- ДА / НЕ в списъка --- */
+.yes-no {
+    display: inline-block;
+    min-width: 2rem;
+    padding: 0.05rem 0.3rem;
+    border-radius: 0.25rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-align: center;
+    letter-spacing: 0.02em;
+}
+
+.yes-no--yes {
+    background: #d1e7dd;
+    color: #0f5132;
+}
+
+.yes-no--no {
+    background: #f1f3f5;
+    color: #6c757d;
+}
+
+.stock-flag {
+    font-size: 0.65rem;
+}
+
+/* --- Натоварване: метални / пластмасови / дървени / паспартута --- */
+.orders-workload-metric {
+    grid-template-columns: 3.9rem 1fr 1.75rem;
+}
+
+.orders-workload-fill--metal,
+.workload-legend--metal {
+    background: #6c757d;
+}
+
+.orders-workload-num--metal {
+    color: #495057;
+}
+
+.orders-workload-fill--plastic,
+.workload-legend--plastic {
+    background: #20c997;
+}
+
+.orders-workload-num--plastic {
+    color: #13795b;
+}
+
+.orders-workload-fill--passepartout,
+.workload-legend--passepartout {
+    background: #d63384;
+}
+
+.orders-workload-num--passepartout {
+    color: #a52668;
+}
+
+/* --- Допълнителни услуги: подраздели без сини цветове --- */
+.order-extras-body {
+    max-height: 460px;
+    overflow-y: auto;
+}
+
+.extra-services-category {
+    border-top: 1px solid #e9ecef;
+    padding-top: 0.5rem;
+    margin-bottom: 0.6rem;
+}
+
+.extra-services-category-title {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: #343a40;
+    text-transform: none;
+    margin-bottom: 0.35rem;
+}
+
+.extra-services-panel .form-check-input:checked {
+    background-color: #495057;
+    border-color: #495057;
+}
+
+.extra-services-panel .form-check-input:focus,
+.extra-services-panel .form-control:focus,
+.extra-services-panel .form-select:focus {
+    border-color: #adb5bd;
+    box-shadow: 0 0 0 0.2rem rgba(108, 117, 125, 0.2);
+}
+
+.extra-service-item {
+    margin-bottom: 0.3rem;
+}
+
+.extra-service-manual-price,
+.extra-service-spacer {
+    max-width: 20rem;
+    margin: 0.2rem 0 0.2rem 1.5rem;
+}
+
+.spacer-stock-hint {
+    margin-left: 1.5rem;
+}
+
+.discount-guidance summary {
+    cursor: pointer;
+}
+
+/* --- Прозорец за вход при изтекла сесия --- */
+.session-login-modal .modal-content {
+    border-top: 4px solid #ffc107;
+}
+
+@media (max-width: 767.98px) {
+    .side-cells {
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+    }
+}
+
+/* --- Статус с един клик --- */
+.status-btns {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    min-width: 6.4rem;
+}
+
+.status-btn {
+    border: 1px solid transparent;
+    border-radius: 0.3rem;
+    padding: 0.1rem 0.4rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-align: left;
+    line-height: 1.3;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.status-btn i {
+    font-size: 0.62rem;
+    width: 0.8rem;
+}
+
+.status-btn.is-off {
+    background: #fff;
+    border-color: #ced4da;
+    color: #6c757d;
+}
+
+.status-btn.is-off:hover {
+    border-color: #6c757d;
+    color: #212529;
+}
+
+.status-btn--ready.is-on { background: #fff3cd; border-color: #ffda6a; color: #664d03; }
+.status-btn--paid.is-on { background: #d1e7dd; border-color: #a3cfbb; color: #0f5132; }
+.status-btn--collected.is-on { background: #cff4fc; border-color: #9eeaf9; color: #055160; }
+.status-btn.is-busy { opacity: 0.5; pointer-events: none; }
+
+.order-row--ready td:first-child {
+    box-shadow: inset 3px 0 0 #ffc107;
+}
+
+.customer-suggest {
+    position: absolute;
+    z-index: 1080;
+    left: 0;
+    right: 0;
+    top: 100%;
+    background: #fff;
+    border: 1px solid #ced4da;
+    border-radius: 0.35rem;
+    box-shadow: 0 0.4rem 1rem rgba(0, 0, 0, 0.12);
+    max-height: 16rem;
+    overflow-y: auto;
+}
+
+.customer-suggest button {
+    display: block;
+    width: 100%;
+    border: 0;
+    background: transparent;
+    text-align: left;
+    padding: 0.35rem 0.6rem;
+    font-size: 0.85rem;
+}
+
+.customer-suggest button:hover,
+.customer-suggest button.is-active {
+    background: #f1f3f5;
+}
+
+.customer-suggest small {
+    color: #6c757d;
+}
+
+.notify-history {
+    max-height: 8rem;
+    overflow-y: auto;
 }

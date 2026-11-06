@@ -1,6 +1,6 @@
 function restoreArchivedOrder(orderId) {
     if (confirm('Да възстановя ли поръчката в списъка „Поръчки“?')) {
-        window.location.href = `${window.BASE_PATH}/restore_order/${orderId}`;
+        postNavigate(`${window.BASE_PATH}/restore_order/${orderId}`);
     }
 }
 

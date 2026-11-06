@@ -1,6 +1,6 @@
 function confirmDelete(hangingId) {
     if (confirm('Сигурни ли сте, че искате да изтриете тази опция?')) {
-        window.location.href = `${window.BASE_PATH}/delete_hanging/${hangingId}`;
+        postNavigate(`${window.BASE_PATH}/delete_hanging/${hangingId}`);
     }
 }
 

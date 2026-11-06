@@ -97,7 +97,13 @@
                     </div>
                 </div>
             </div>
-            <div class="modal-footer">
+            <div class="modal-footer flex-wrap">
+                <a class="btn btn-outline-secondary me-auto" id="viewOrderPrintClient" href="#" target="_blank" rel="noopener">
+                    <i class="fas fa-receipt"></i> Разписка
+                </a>
+                <button type="button" class="btn btn-outline-primary d-none" id="viewOrderNotifyBtn">
+                    <i class="fas fa-paper-plane"></i> Уведоми клиента
+                </button>
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Затвори</button>
                 <button type="button" class="btn btn-primary" id="viewOrderEditBtn">
                     <i class="fas fa-edit"></i> Редактирай
