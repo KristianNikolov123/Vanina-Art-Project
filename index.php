@@ -153,6 +153,7 @@ if ($uri === '/interface') {
         }
     }
     $orders = fetch_active_orders($conn);
+    $orders_sync_revision = compute_active_orders_revision($orders);
     $profiles = $conn->query('SELECT id, name, price FROM profiles ORDER BY name')->fetchAll();
     $glasses = $conn->query('SELECT id, name, price FROM glasses ORDER BY name')->fetchAll();
     $passepartouts = $conn->query('SELECT id, name, price FROM passepartouts ORDER BY name')->fetchAll();
@@ -165,6 +166,7 @@ if ($uri === '/interface') {
         'body_class' => 'page-orders',
         'layout_container_class' => 'container-fluid px-2 px-lg-3',
         'orders' => $orders,
+        'orders_sync_revision' => $orders_sync_revision,
         'workloadChart' => build_order_workload_chart($conn, $orders, 14),
         'profiles' => $profiles,
         'glasses' => $glasses,
@@ -172,6 +174,7 @@ if ($uri === '/interface') {
         'backs' => $backs,
         'hanging_options' => $hanging_options,
         'services' => $services,
+        'order_pricing_hints' => get_order_automatic_pricing_hints($conn),
         'extra_css' => 'interface.css',
         'extra_js' => ['search-utils.js', 'interface.js'],
     ]);
@@ -183,6 +186,25 @@ if ($uri === '/calculate_price' && $method === 'POST') {
     header('Content-Type: application/json');
     $order = build_order_from_post();
     echo json_encode(calculate_order_pricing(get_db_connection(), $order));
+    exit;
+}
+
+if ($uri === '/api/active_orders' && $method === 'GET') {
+    require_login();
+    header('Content-Type: application/json; charset=utf-8');
+    header('Cache-Control: no-store');
+    $conn = get_db_connection();
+    $clientRevision = trim((string)($_GET['revision'] ?? ''));
+    $payload = build_active_orders_sync_payload($conn);
+    if ($clientRevision !== '' && hash_equals($payload['revision'], $clientRevision)) {
+        echo json_encode(['unchanged' => true, 'revision' => $payload['revision']], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    echo json_encode([
+        'unchanged' => false,
+        'revision' => $payload['revision'],
+        'orders' => $payload['orders'],
+    ], JSON_UNESCAPED_UNICODE);
     exit;
 }
 
@@ -285,13 +307,16 @@ if ($uri === '/save_services' && $method === 'POST') {
         $conn->beginTransaction();
         $counts = save_services_pricing_from_post($conn, $_POST);
         $conn->commit();
+        $synced = (int)($counts['pp_synced'] ?? 0);
+        $syncMsg = $synced > 0 ? " Синхронизирани са {$synced} артикула паспарту към новите видове." : '';
         flash(
             sprintf(
-                'Запазени са %d тарифи за труд, %d услуги, %d цени по вид паспарту и %d правила.',
+                'Запазени са %d тарифи за труд, %d услуги, %d цени по вид паспарту и %d правила.%s',
                 $counts['settings'],
                 $counts['services'],
                 $counts['pp_tiers'],
-                $counts['rules']
+                $counts['rules'],
+                $syncMsg
             ),
             'success'
         );
@@ -319,7 +344,7 @@ if ($uri === '/passepartouts') {
         'current_page' => 'passepartouts',
         'passepartouts' => $passepartouts,
         'sheet_types' => $sheetTypes,
-        'passepartout_price_kinds' => get_passepartout_price_kind_definitions(),
+        'passepartout_price_kinds' => get_passepartout_price_kind_definitions($conn),
         'passepartout_tier_labels' => get_passepartout_tier_scheme_labels(),
         'extra_css' => ['passepartouts.css', 'bulk-edit.css'],
         'extra_js' => ['bulk-select.js', 'multi-add-rows.js', 'passepartouts.js'],
@@ -762,7 +787,7 @@ if ($uri === '/bulk_edit_passepartouts' && $method === 'POST') {
 
     $applySheetStock = $_POST['apply_sheet_stock'] ?? [];
     $hasSheetChanges = is_array($applySheetStock) && count(array_filter($applySheetStock)) > 0;
-    $hasChanges = !empty($_POST['apply_price']) || $hasSheetChanges;
+    $hasChanges = !empty($_POST['apply_passepartout_pricing']) || $hasSheetChanges;
 
     if (!$hasChanges) {
         flash('Маркирайте поне едно поле за промяна.', 'warning');

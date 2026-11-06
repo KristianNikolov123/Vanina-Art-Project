@@ -38,6 +38,7 @@
                 <tbody>
                     <?php foreach ($passepartouts as $passepartout): ?>
                     <?php
+                    $passepartout = refresh_passepartout_row_pricing($passepartout);
                     $tierValues = [];
                     for ($tier = 1; $tier <= 4; $tier++) {
                         $tierValues[] = (float)($passepartout['price_tier_' . $tier] ?? 0);
@@ -81,24 +82,27 @@
 </div>
 
 <div class="modal" data-bs-scroll="true" id="bulkEditPassepartoutsModal" tabindex="-1">
-    <div class="modal-dialog">
+    <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title">Групово редактиране на паспарту</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
-            <div class="modal-body">
-                <form id="bulkEditPassepartoutsForm" action="<?= url_for('bulk_edit_passepartouts') ?>" method="post">
+            <form id="bulkEditPassepartoutsForm" action="<?= url_for('bulk_edit_passepartouts') ?>" method="post">
+                <div class="modal-body">
                     <div class="bulk-ids-container"></div>
-                    <p class="text-muted small mb-3">Отметнете полетата, които искате да промените за избраните редове.</p>
+                    <p class="text-muted small mb-3">Отметнете секциите, които искате да промените за всички избрани редове.</p>
 
-                    <div class="bulk-field">
-                        <div class="form-check">
-                            <input type="checkbox" class="form-check-input" name="apply_price" id="bulk_pp_apply_price" data-bulk-toggle="price">
-                            <label class="form-check-label" for="bulk_pp_apply_price">Цена</label>
-                        </div>
-                        <label class="bulk-field__label text-muted" for="bulk_pp_price">€/кв.м.</label>
-                        <input type="text" inputmode="decimal" autocomplete="off" class="form-control bulk-field__value" name="price" id="bulk_pp_price" step="0.01" min="0" disabled>
+                    <div class="form-check mb-2">
+                        <input type="checkbox" class="form-check-input" name="apply_passepartout_pricing" id="bulk_pp_apply_pricing" value="1">
+                        <label class="form-check-label fw-semibold" for="bulk_pp_apply_pricing">Вид цени и нива (€/бр.)</label>
+                    </div>
+                    <div class="bulk-pp-pricing-wrap mb-3 ps-1" data-bulk-pricing-block>
+                        <?php
+                        $pricingNameBase = '';
+                        $pricingIdSuffix = '_bulk';
+                        include __DIR__ . '/partials/passepartout_pricing_fields.php';
+                        ?>
                     </div>
 
                     <div class="mb-2">
@@ -120,12 +124,12 @@
                             <?php endforeach; ?>
                         </div>
                     </div>
-                </form>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отказ</button>
-                <button type="submit" form="bulkEditPassepartoutsForm" class="btn btn-primary">Приложи</button>
-            </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отказ</button>
+                    <button type="submit" class="btn btn-primary">Приложи</button>
+                </div>
+            </form>
         </div>
     </div>
 </div>

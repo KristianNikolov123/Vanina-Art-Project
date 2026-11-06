@@ -1,4 +1,106 @@
 // Function to add additional profile fields
+function renumberPassepartoutLayers(container) {
+    if (!container) return;
+    container.querySelectorAll('.passepartout-layer-additional').forEach((layer, index) => {
+        const layerNum = index + 2;
+        const badge = layer.querySelector('.passepartout-layer-badge');
+        if (badge) {
+            badge.textContent = String(layerNum);
+        }
+        const subtitle = layer.querySelector('.passepartout-layer-subtitle');
+        if (subtitle) {
+            subtitle.textContent = `Слой ${layerNum} — надолу`;
+        }
+    });
+}
+
+function parsePassepartoutReveals(stored) {
+    const text = String(stored ?? '').trim();
+    if (text === '') {
+        return [];
+    }
+    if (!text.includes(',')) {
+        return [text];
+    }
+    return text.split(',').map((part) => part.trim());
+}
+
+function buildPassepartoutLayerRow(value = '', reveal = '') {
+    const layer = document.createElement('div');
+    layer.className = 'passepartout-layer passepartout-layer-additional p-2 p-md-3 border-top';
+
+    const head = document.createElement('div');
+    head.className = 'd-flex align-items-center gap-2 mb-2';
+    head.innerHTML = `
+        <span class="badge rounded-pill text-bg-secondary passepartout-layer-badge">2</span>
+        <span class="small fw-semibold text-muted passepartout-layer-subtitle">Слой 2 — надолу</span>
+    `;
+
+    const fields = document.createElement('div');
+    fields.className = 'row g-2 align-items-end passepartout-layer-fields';
+
+    const stockCol = document.createElement('div');
+    stockCol.className = 'col-6';
+    stockCol.innerHTML = '<label class="form-label small text-muted mb-0">№ от склад</label>';
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'form-control order-price-trigger';
+    input.name = 'additional_passepartouts[]';
+    input.setAttribute('list', 'passepartoutCatalog');
+    input.setAttribute('autocomplete', 'off');
+    input.placeholder = '№ от склада';
+    input.value = value;
+    stockCol.appendChild(input);
+
+    const revealCol = document.createElement('div');
+    revealCol.className = 'col-4';
+    revealCol.innerHTML = '<label class="form-label small text-muted mb-0">Отстъп</label>';
+    const revealInput = document.createElement('input');
+    revealInput.type = 'text';
+    revealInput.inputMode = 'decimal';
+    revealInput.autocomplete = 'off';
+    revealInput.className = 'form-control passepartout-reveal-input';
+    revealInput.name = 'passepartout_reveal[]';
+    revealInput.placeholder = 'см';
+    revealInput.value = reveal;
+    revealCol.appendChild(revealInput);
+
+    const actionCol = document.createElement('div');
+    actionCol.className = 'col-2 d-grid';
+    actionCol.innerHTML = '<label class="form-label small text-muted mb-0 d-none d-md-block">&nbsp;</label>';
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'btn btn-outline-danger';
+    button.innerHTML = '<i class="fas fa-minus"></i>';
+    button.addEventListener('click', () => {
+        const container = layer.parentElement;
+        layer.remove();
+        renumberPassepartoutLayers(container);
+    });
+    actionCol.appendChild(button);
+
+    fields.appendChild(stockCol);
+    fields.appendChild(revealCol);
+    fields.appendChild(actionCol);
+    layer.appendChild(head);
+    layer.appendChild(fields);
+
+    return layer;
+}
+
+function addPassepartoutField(containerId) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    container.appendChild(buildPassepartoutLayerRow());
+    renumberPassepartoutLayers(container);
+}
+
+function appendAdditionalPassepartoutField(container, value, reveal = '') {
+    if (!container) return;
+    container.appendChild(buildPassepartoutLayerRow(value, reveal));
+    renumberPassepartoutLayers(container);
+}
+
 function addProfileField(containerId = 'additionalProfiles') {
     const container = document.getElementById(containerId);
     const div = document.createElement('div');
@@ -43,6 +145,9 @@ function clearAddOrderForm() {
     const profilesContainer = document.getElementById('additionalProfiles');
     if (profilesContainer) profilesContainer.innerHTML = '';
 
+    const extraPpContainer = document.getElementById('additionalProfiles_extraPp');
+    if (extraPpContainer) extraPpContainer.innerHTML = '';
+
     form.querySelectorAll('select').forEach((select) => {
         select.selectedIndex = 0;
     });
@@ -69,10 +174,12 @@ function clearAddOrderForm() {
     expandOrderExtrasIfNeeded(form, null);
     syncHangingWeightField(form);
     syncPassepartoutUseFields(form);
+    syncPassepartoutZeroFields(form);
     syncProfileReadyFrameFields(form);
     syncAreaTierSuggestions(form);
     form.dataset.autoPrice = '1';
     setOrderFormAcceptedDateToday(form);
+    syncPickupDatePickerFromForm(form);
 }
 
 function formatDateDdMmYyyy(dateStr) {
@@ -131,32 +238,140 @@ function isVrazkaHanging(value) {
     return String(value || '').trim() === 'Връзка';
 }
 
+function setPassepartoutBlockDisabled(block, disabled) {
+    if (!block) return;
+    block.querySelectorAll('input, select, textarea, button').forEach((el) => {
+        if (el.classList.contains('passepartout-use-select')) {
+            return;
+        }
+        el.disabled = disabled;
+    });
+}
+
 function syncPassepartoutUseFields(form) {
     if (!form) return;
 
     const useSelect = form.querySelector('[name="passepartout_use"]');
-    const primaryLabel = form.querySelector('.passepartout-primary-label');
-    const backgroundField = form.querySelector('.passepartout-background-field');
-    if (!useSelect) return;
+    const use = useSelect && useSelect.value ? useSelect.value : 'passepartout';
 
-    const use = useSelect.value || 'passepartout';
-    const showBackground = use === 'both';
+    const stack = form.querySelector('.passepartout-mode-stack');
+    const bgOnly = form.querySelector('.passepartout-mode-background');
+    const fondWrap = form.querySelector('.passepartout-mode-both-fond');
 
-    if (backgroundField) {
-        backgroundField.classList.toggle('d-none', !showBackground);
-        if (!showBackground) {
-            const bgSelect = backgroundField.querySelector('[name="passepartout_background_id"]');
-            if (bgSelect) bgSelect.value = '';
+    const showStack = use === 'passepartout' || use === 'both';
+    const showBgOnly = use === 'background';
+    const showFond = use === 'both';
+
+    stack?.classList.toggle('d-none', !showStack);
+    bgOnly?.classList.toggle('d-none', !showBgOnly);
+    fondWrap?.classList.toggle('d-none', !showFond);
+
+    setPassepartoutBlockDisabled(stack, !showStack);
+    setPassepartoutBlockDisabled(bgOnly, !showBgOnly);
+    setPassepartoutBlockDisabled(fondWrap, !showFond);
+
+    if (use === 'background') {
+        const zeroCheck = form.querySelector('[name="passepartout_zero"]');
+        if (zeroCheck) {
+            zeroCheck.checked = false;
         }
+        syncPassepartoutZeroFields(form);
     }
+}
 
-    if (primaryLabel) {
-        if (use === 'background') {
-            primaryLabel.textContent = 'Фон (материал)';
+function syncPassepartoutZeroFields(form) {
+    if (!form) return;
+
+    const zeroCheck = form.querySelector('[name="passepartout_zero"]');
+    const primaryLayer = form.querySelector('.passepartout-layer-primary');
+    const marginsWrap = form.querySelector('.passepartout-zero-margins');
+    const titleEl = form.querySelector('.passepartout-layer-primary .passepartout-layer-title');
+    const nameInput = form.querySelector('[name="passepartout"].passepartout-name-input')
+        || form.querySelector('[name="passepartout"]');
+    if (!zeroCheck) return;
+
+    const isZero = zeroCheck.checked;
+    if (marginsWrap) {
+        marginsWrap.classList.toggle('d-none', !isZero);
+    }
+    if (primaryLayer) {
+        primaryLayer.classList.toggle('passepartout-layer--zero', isZero);
+    }
+    if (titleEl) {
+        titleEl.textContent = isZero
+            ? 'Нулево — слой 1 (най-горе)'
+            : 'Слой 1 — най-горе (към стъкло)';
+    }
+    if (nameInput) {
+        nameInput.disabled = isZero;
+        if (isZero) {
+            nameInput.value = '';
+            nameInput.placeholder = 'Не се въвежда № при нулево';
         } else {
-            primaryLabel.textContent = 'Паспарту';
+            nameInput.placeholder = '№ от склада';
         }
     }
+}
+
+function isoDateToDdMmYyyy(iso) {
+    if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return '';
+    const [y, m, d] = iso.split('-');
+    return `${d}/${m}/${y}`;
+}
+
+function ddMmYyyyToIso(value) {
+    const text = String(value || '').trim();
+    if (!text) return '';
+    const m = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (!m) return '';
+    const dd = m[1].padStart(2, '0');
+    const mm = m[2].padStart(2, '0');
+    return `${m[3]}-${mm}-${dd}`;
+}
+
+function bindOrderDatePicker(form) {
+    if (!form || form.dataset.datePickerBound === '1') return;
+    form.dataset.datePickerBound = '1';
+
+    form.querySelectorAll('.order-form-pickup-group').forEach((group) => {
+        const picker = group.querySelector('.order-date-picker-native');
+        const textInput = group.querySelector('.order-date-dd[name="date"]');
+        const btn = group.querySelector('.order-date-picker-btn');
+        if (!picker || !textInput) return;
+
+        if (btn) {
+            btn.addEventListener('click', () => {
+                if (typeof picker.showPicker === 'function') {
+                    picker.showPicker();
+                } else {
+                    picker.focus();
+                }
+            });
+        }
+
+        picker.addEventListener('change', () => {
+            if (picker.value) {
+                textInput.value = isoDateToDdMmYyyy(picker.value);
+                textInput.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+        });
+
+        textInput.addEventListener('change', () => {
+            const iso = ddMmYyyyToIso(textInput.value);
+            picker.value = iso || '';
+        });
+    });
+}
+
+function syncPickupDatePickerFromForm(form) {
+    if (!form) return;
+    form.querySelectorAll('.order-form-pickup-group').forEach((group) => {
+        const picker = group.querySelector('.order-date-picker-native');
+        const textInput = group.querySelector('.order-date-dd[name="date"]');
+        if (!picker || !textInput) return;
+        const iso = ddMmYyyyToIso(textInput.value);
+        picker.value = iso || '';
+    });
 }
 
 function syncProfileReadyFrameFields(form) {
@@ -273,17 +488,12 @@ function parsePrimaryPassepartoutLabel(label) {
 
 function syncHangingWeightField(form) {
     if (!form) return;
-
-    const hanging = form.querySelector('[name="hanging"]');
     const weightWrap = form.querySelector('.hanging-weight-field');
     const weightInput = form.querySelector('[name="weight_kg"]');
-    if (!hanging || !weightWrap) {
-        return;
+    if (weightWrap) {
+        weightWrap.classList.add('d-none');
     }
-
-    const showWeight = isVrazkaHanging(hanging.value);
-    weightWrap.classList.toggle('d-none', !showWeight);
-    if (!showWeight && weightInput) {
+    if (weightInput) {
         weightInput.value = '';
     }
 }
@@ -489,6 +699,148 @@ function syncStatusFilterAllButton() {
     allButton.classList.toggle('active', !hasPayment && !hasCollection);
 }
 
+const ORDERS_SYNC_INTERVAL_MS = 3500;
+let ordersSyncRevision = window.ORDERS_SYNC_REVISION || '';
+let ordersSyncTimer = null;
+let ordersTableResponsive = null;
+let ordersFloatActions = null;
+
+function shouldPauseOrdersLiveSync() {
+    if (document.hidden) {
+        return true;
+    }
+    return document.querySelector('.modal.show') !== null;
+}
+
+function rowFromSyncHtml(html) {
+    const temp = document.createElement('tbody');
+    temp.innerHTML = html.trim();
+    return temp.querySelector('tr.order-row');
+}
+
+function bindSingleOrderRow(row) {
+    if (!row || !ordersTableResponsive || !ordersFloatActions) {
+        return;
+    }
+
+    row.addEventListener('click', function (e) {
+        if (e.target.closest('.description-preview')) {
+            return;
+        }
+        viewOrder(row.dataset.orderId);
+    });
+
+    row.addEventListener('mouseenter', function () {
+        const orderId = row.dataset.orderId;
+        const rowRect = row.getBoundingClientRect();
+        const containerRect = ordersTableResponsive.getBoundingClientRect();
+        ordersFloatActions.style.top = (rowRect.top - containerRect.top + ordersTableResponsive.scrollTop) + 'px';
+        ordersFloatActions.style.display = 'flex';
+        ordersFloatActions.innerHTML = `
+                <button class="btn btn-outline-primary btn-sm" onclick="editOrder('${orderId}')"><i class="fas fa-edit"></i></button>
+                <button class="btn btn-outline-danger btn-sm" onclick="confirmDelete('${orderId}')"><i class="fas fa-trash"></i></button>
+                <button class="btn btn-outline-success btn-sm" onclick="addSubOrder('${orderId}')"><i class="fas fa-plus"></i></button>
+            `;
+        ordersFloatActions.style.height = row.offsetHeight + 'px';
+    });
+
+    row.addEventListener('mouseleave', function (e) {
+        const toElement = e.relatedTarget;
+        if (!toElement || (!toElement.classList.contains('order-row') && !ordersFloatActions.contains(toElement))) {
+            ordersFloatActions.style.display = 'none';
+        }
+    });
+}
+
+function applyActiveOrdersSync(remoteOrders) {
+    const tbody = document.querySelector('.orders-container tbody');
+    if (!tbody || !Array.isArray(remoteOrders)) {
+        return;
+    }
+
+    const remoteById = new Map(remoteOrders.map((entry) => [String(entry.id), entry]));
+
+    tbody.querySelectorAll('.order-row').forEach((row) => {
+        const id = row.dataset.orderId;
+        if (!remoteById.has(id)) {
+            row.remove();
+        }
+    });
+
+    remoteOrders.forEach((entry) => {
+        const id = String(entry.id);
+        const existing = tbody.querySelector(`.order-row[data-order-id="${id}"]`);
+        if (existing && existing.dataset.rowRevision === entry.revision) {
+            return;
+        }
+
+        const newRow = rowFromSyncHtml(entry.html);
+        if (!newRow) {
+            return;
+        }
+
+        if (existing) {
+            existing.replaceWith(newRow);
+        } else {
+            tbody.appendChild(newRow);
+        }
+        bindSingleOrderRow(newRow);
+    });
+
+    const sortSelect = document.getElementById('orderSortSelect');
+    if (sortSelect) {
+        sortOrderRows(sortSelect.value);
+    }
+    applyOrderRowVisibility();
+}
+
+async function pollActiveOrdersSync() {
+    if (shouldPauseOrdersLiveSync()) {
+        return;
+    }
+
+    const base = window.BASE_PATH || '';
+    const query = ordersSyncRevision ? `?revision=${encodeURIComponent(ordersSyncRevision)}` : '';
+    try {
+        const response = await fetch(`${base}/api/active_orders${query}`, {
+            credentials: 'same-origin',
+            headers: { Accept: 'application/json' },
+        });
+        if (!response.ok) {
+            return;
+        }
+        const data = await response.json();
+        if (!data || data.unchanged) {
+            if (data?.revision) {
+                ordersSyncRevision = data.revision;
+            }
+            return;
+        }
+        ordersSyncRevision = data.revision || ordersSyncRevision;
+        applyActiveOrdersSync(data.orders || []);
+    } catch (err) {
+        // ignore transient network errors
+    }
+}
+
+function initOrdersLiveSync() {
+    if (!document.querySelector('.orders-container tbody')) {
+        return;
+    }
+
+    ordersSyncRevision = window.ORDERS_SYNC_REVISION || ordersSyncRevision;
+    pollActiveOrdersSync();
+    if (ordersSyncTimer) {
+        clearInterval(ordersSyncTimer);
+    }
+    ordersSyncTimer = setInterval(pollActiveOrdersSync, ORDERS_SYNC_INTERVAL_MS);
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) {
+            pollActiveOrdersSync();
+        }
+    });
+}
+
 // Function to add a sub-order
 function addSubOrder(orderId) {
     const form = document.getElementById('addSubOrderForm');
@@ -576,15 +928,25 @@ function viewOrder(orderId) {
     document.getElementById('viewOrderPickupDate').textContent = pickupFromCell
         || formatDateDdMmYyyy(data.date)
         || '—';
-    document.getElementById('viewOrderSize').textContent = data.width && data.height
+    let sizeText = data.width && data.height
         ? `${data.width} × ${data.height} cm`
         : '—';
+    if (data.artwork_type && window.ARTWORK_TYPE_LABELS && window.ARTWORK_TYPE_LABELS[data.artwork_type]) {
+        sizeText = sizeText === '—'
+            ? window.ARTWORK_TYPE_LABELS[data.artwork_type]
+            : `${sizeText} · ${window.ARTWORK_TYPE_LABELS[data.artwork_type]}`;
+    }
+    document.getElementById('viewOrderSize').textContent = sizeText;
     document.getElementById('viewOrderFrameCount').textContent = displayValue(data.frame_count ?? 1);
     document.getElementById('viewOrderProfile').textContent = displayValue(data.profile);
     document.getElementById('viewOrderAdditionalProfiles').textContent = displayValue(data.additional_profiles);
     document.getElementById('viewOrderGlass').textContent = displayValue(data.glass);
     document.getElementById('viewOrderBack').textContent = displayValue(data.back);
-    document.getElementById('viewOrderHanging').textContent = displayValue(data.hanging);
+    let hangingText = displayValue(data.hanging);
+    if (data.hanger) {
+        hangingText = hangingText === '—' ? data.hanger : `${hangingText} + ${data.hanger}`;
+    }
+    document.getElementById('viewOrderHanging').textContent = hangingText;
     document.getElementById('viewOrderCustomer').textContent = displayValue(data.customer_name);
     const viewPhone = document.getElementById('viewOrderPhone');
     if (viewPhone) {
@@ -592,6 +954,25 @@ function viewOrder(orderId) {
     }
 
     let passepartoutText = displayValue(data.passepartout);
+    if (data.passepartout_background) {
+        const bg = String(data.passepartout_background).trim();
+        if (bg !== '') {
+            passepartoutText = passepartoutText === '—' ? bg : `${passepartoutText} · ${bg}`;
+        }
+    }
+    if (data.additional_passepartouts) {
+        const extra = String(data.additional_passepartouts).trim();
+        if (extra !== '') {
+            passepartoutText = passepartoutText === '—' ? extra : `${passepartoutText} · ${extra}`;
+        }
+    }
+    const revealParts = parsePassepartoutReveals(data.passepartout_reveal_cm);
+    if (revealParts.length > 0) {
+        const revealLabel = revealParts.map((r, i) => (r !== '' ? `сл.${i + 1}: ${r} см` : null)).filter(Boolean).join(', ');
+        if (revealLabel !== '') {
+            passepartoutText += ` (отстъп ${revealLabel})`;
+        }
+    }
     if (data.passepartout_bill_width && data.passepartout_bill_height) {
         passepartoutText += ` (фактурирано: ${data.passepartout_bill_width}×${data.passepartout_bill_height} cm)`;
     }
@@ -662,34 +1043,78 @@ function editOrder(orderId) {
         acceptedInput.value = formatDateDdMmYyyy(data.accepted_date || data.date);
     }
     form.querySelector('[name="date"]').value = formatDateDdMmYyyy(data.date);
+    syncPickupDatePickerFromForm(form);
     form.querySelector('[name="width"]').value = data.width ?? '';
     form.querySelector('[name="height"]').value = data.height ?? '';
     form.querySelector('[name="profile"]').value = data.profile ?? '';
     form.querySelector('[name="glass"]').value = data.glass ?? '';
-    const passepartoutSelect = form.querySelector('[name="passepartout_id"]');
-    if (passepartoutSelect && data.passepartout) {
-        passepartoutSelect.value = resolvePassepartoutCatalogId(parsePrimaryPassepartoutLabel(data.passepartout));
+    const ppInput = form.querySelector('[name="passepartout"]');
+    const ppZero = form.querySelector('[name="passepartout_zero"]');
+    const isZero = Boolean(data.passepartout_zero) || String(data.passepartout || '').startsWith('Нулево');
+    if (ppZero) {
+        ppZero.checked = isZero;
     }
-    const passepartoutUse = form.querySelector('[name="passepartout_use"]');
-    if (passepartoutUse) {
-        let use = data.passepartout_use || '';
-        if (!use && data.passepartout) {
-            const label = String(data.passepartout);
-            if (label.includes(' + ') || (data.passepartout_background && String(data.passepartout_background).trim() !== '')) {
-                use = 'both';
-            } else if (label.includes('(фон)')) {
-                use = 'background';
-            } else {
-                use = 'passepartout';
-            }
+    if (ppInput) {
+        ppInput.value = isZero ? '' : parsePrimaryPassepartoutLabel(data.passepartout || '');
+    }
+    ['l', 'r', 't', 'b'].forEach((key) => {
+        const field = form.querySelector(`[name="passepartout_margin_${key}"]`);
+        if (field) {
+            field.value = data[`passepartout_margin_${key}`] ?? '';
         }
-        passepartoutUse.value = ['passepartout', 'background', 'both'].includes(use) ? use : 'passepartout';
+    });
+    let ppUse = data.passepartout_use || '';
+    if (!ppUse) {
+        const bgStored = String(data.passepartout_background ?? '').trim();
+        if (bgStored !== '') {
+            ppUse = 'both';
+        } else if (String(data.passepartout || '').includes('(фон)')) {
+            ppUse = 'background';
+        } else {
+            ppUse = 'passepartout';
+        }
     }
-    const passepartoutBgSelect = form.querySelector('[name="passepartout_background_id"]');
-    if (passepartoutBgSelect && data.passepartout_background) {
-        passepartoutBgSelect.value = resolvePassepartoutCatalogId(data.passepartout_background);
+    const useSelect = form.querySelector('[name="passepartout_use"]');
+    if (useSelect) {
+        useSelect.value = ppUse;
     }
     syncPassepartoutUseFields(form);
+
+    const fondInput = form.querySelector('[name="passepartout_background"]');
+    if (fondInput) {
+        fondInput.value = data.passepartout_background ?? '';
+    }
+
+    if (ppUse === 'background') {
+        const bgInput = form.querySelector('.passepartout-fond-only-input');
+        if (bgInput) {
+            bgInput.value = parsePrimaryPassepartoutLabel(data.passepartout || '');
+        }
+    }
+
+    syncPassepartoutZeroFields(form);
+    const revealParts = parsePassepartoutReveals(data.passepartout_reveal_cm);
+    const primaryReveal = form.querySelector('.passepartout-layer-primary [name="passepartout_reveal[]"]');
+    if (primaryReveal) {
+        primaryReveal.value = revealParts[0] ?? '';
+    }
+    const extraPpContainer = form.querySelector('[id$="_extraPp"]');
+    if (extraPpContainer) {
+        extraPpContainer.innerHTML = '';
+        if (ppUse !== 'background' && data.additional_passepartouts) {
+            data.additional_passepartouts.split(', ').forEach((name, index) => {
+                const trimmed = name.trim();
+                if (trimmed !== '') {
+                    appendAdditionalPassepartoutField(extraPpContainer, trimmed, revealParts[index + 1] ?? '');
+                }
+            });
+        }
+    }
+    syncPassepartoutUseFields(form);
+    const artworkSelect = form.querySelector('[name="artwork_type"]');
+    if (artworkSelect) {
+        artworkSelect.value = data.artwork_type ?? '';
+    }
     const readyFrame = form.querySelector('[name="profile_ready_frame"]');
     if (readyFrame) {
         readyFrame.checked = Boolean(data.profile_ready_frame);
@@ -701,6 +1126,10 @@ function editOrder(orderId) {
     syncProfileReadyFrameFields(form);
     form.querySelector('[name="back"]').value = data.back ?? '';
     form.querySelector('[name="hanging"]').value = data.hanging ?? '';
+    const hangerSelect = form.querySelector('[name="hanger"]');
+    if (hangerSelect) {
+        hangerSelect.value = data.hanger ?? '';
+    }
     const weightKg = form.querySelector('[name="weight_kg"]');
     if (weightKg) {
         weightKg.value = data.weight_kg ?? '';
@@ -744,6 +1173,9 @@ function loadOrderExtras(form, data) {
 
     const transportKm = form.querySelector('[name="transport_km"]');
     if (transportKm) transportKm.value = data.transport_km ?? '';
+
+    const carryFloors = form.querySelector('[name="carry_floors"]');
+    if (carryFloors) carryFloors.value = data.carry_floors ?? '';
 
     const urgent = form.querySelector('[name="urgent"]');
     if (urgent) urgent.checked = Boolean(data.urgent);
@@ -810,6 +1242,7 @@ function orderHasExtras(data) {
         || (data.frame_shape && data.frame_shape !== '')
         || (data.passepartout_openings && Number(data.passepartout_openings) > 1)
         || (data.transport_km && Number(data.transport_km) > 0)
+        || (data.carry_floors && Number(data.carry_floors) > 0)
         || data.profile_ready_frame
         || (Array.isArray(serviceIds) && serviceIds.length > 0)
     );
@@ -940,7 +1373,7 @@ async function updateOrderPricing(form) {
                 laborParts.push(`материал ${pricing.passepartout_material_cost.toFixed(2)}`);
             }
             if (pricing.passepartout_labor_cost > 0) {
-                laborParts.push(`рязане ${pricing.passepartout_labor_cost.toFixed(2)}`);
+                laborParts.push(`труд/отвори ${pricing.passepartout_labor_cost.toFixed(2)}`);
             }
             const labor = laborParts.length > 0 ? ` (${laborParts.join(' + ')} €)` : '';
             const openingsText = pricing.passepartout_openings > 1
@@ -1136,42 +1569,17 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     });
 
-    const floatActions = document.querySelector('.row-float-actions');
-    const orderRows = document.querySelectorAll('.order-row');
-    const tableResponsive = document.querySelector('.table-responsive');
+    ordersFloatActions = document.querySelector('.row-float-actions');
+    ordersTableResponsive = document.querySelector('.orders-container .table-responsive');
+    document.querySelectorAll('.order-row').forEach((row) => bindSingleOrderRow(row));
 
-    orderRows.forEach(row => {
-        row.addEventListener('click', function (e) {
-            if (e.target.closest('.description-preview')) {
-                return;
-            }
-            viewOrder(row.dataset.orderId);
+    if (ordersFloatActions) {
+        ordersFloatActions.addEventListener('mouseleave', function () {
+            ordersFloatActions.style.display = 'none';
         });
+    }
 
-        row.addEventListener('mouseenter', function () {
-            const orderId = row.dataset.orderId;
-            const rowRect = row.getBoundingClientRect();
-            const containerRect = tableResponsive.getBoundingClientRect();
-            floatActions.style.top = (rowRect.top - containerRect.top + tableResponsive.scrollTop) + 'px';
-            floatActions.style.display = 'flex';
-            floatActions.innerHTML = `
-                <button class="btn btn-outline-primary btn-sm" onclick="editOrder('${orderId}')"><i class="fas fa-edit"></i></button>
-                <button class="btn btn-outline-danger btn-sm" onclick="confirmDelete('${orderId}')"><i class="fas fa-trash"></i></button>
-                <button class="btn btn-outline-success btn-sm" onclick="addSubOrder('${orderId}')"><i class="fas fa-plus"></i></button>
-            `;
-            floatActions.style.height = row.offsetHeight + 'px';
-        });
-        row.addEventListener('mouseleave', function (e) {
-            const toElement = e.relatedTarget;
-            if (!toElement || (!toElement.classList.contains('order-row') && !floatActions.contains(toElement))) {
-                floatActions.style.display = 'none';
-            }
-        });
-    });
-
-    floatActions.addEventListener('mouseleave', function () {
-        floatActions.style.display = 'none';
-    });
+    initOrdersLiveSync();
 
     function bindAutoPrice(form) {
         if (form.dataset.autoPriceBound) return;
@@ -1188,10 +1596,15 @@ document.addEventListener('DOMContentLoaded', function () {
         const el = event.target;
         return el.classList.contains('order-price-trigger')
             || el.name === 'additional_profiles[]'
+            || el.name === 'additional_passepartouts[]'
             || el.name === 'extra_services[]'
-            || el.name === 'passepartout_id'
-            || el.name === 'passepartout_background_id'
+            || el.name === 'passepartout'
+            || el.name === 'passepartout_zero'
             || el.name === 'passepartout_use'
+            || el.name === 'passepartout_background'
+            || el.name === 'hanger'
+            || el.name === 'carry_floors'
+            || el.name.startsWith('passepartout_margin_')
             || el.name === 'back'
             || el.name === 'hanging'
             || el.name === 'weight_kg'
@@ -1223,6 +1636,9 @@ document.addEventListener('DOMContentLoaded', function () {
             if (event.target && event.target.name === 'hanging') {
                 syncHangingWeightField(form);
             }
+            if (event.target && event.target.name === 'passepartout_zero') {
+                syncPassepartoutZeroFields(form);
+            }
             if (event.target && event.target.name === 'passepartout_use') {
                 syncPassepartoutUseFields(form);
             }
@@ -1241,6 +1657,9 @@ document.addEventListener('DOMContentLoaded', function () {
             if (event.target && event.target.name === 'hanging') {
                 syncHangingWeightField(form);
             }
+            if (event.target && event.target.name === 'passepartout_zero') {
+                syncPassepartoutZeroFields(form);
+            }
             if (event.target && event.target.name === 'passepartout_use') {
                 syncPassepartoutUseFields(form);
             }
@@ -1256,8 +1675,10 @@ document.addEventListener('DOMContentLoaded', function () {
         });
 
         syncPassepartoutUseFields(form);
+        syncPassepartoutZeroFields(form);
         syncProfileReadyFrameFields(form);
         syncAreaTierSuggestions(form);
+        bindOrderDatePicker(form);
     });
 
     const addOrderModal = document.getElementById('addOrderModal');

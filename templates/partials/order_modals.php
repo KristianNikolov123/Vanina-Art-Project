@@ -1,5 +1,5 @@
 <div class="modal" data-bs-scroll="true" id="addOrderModal" tabindex="-1">
-    <div class="modal-dialog modal-lg">
+    <div class="modal-dialog modal-lg order-form-modal">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title">Нова поръчка</h5>
@@ -7,20 +7,28 @@
             </div>
             <div class="modal-body">
                 <form id="addOrderForm" class="order-form" action="<?= url_for('add_order') ?>" method="post">
-                    <div class="row">
+                    <div class="row g-2 mb-2 order-form-row-1">
                         <?php
                         $showAcceptedDate = true;
                         $acceptedDateId = 'addAcceptedDate';
                         $pickupDateId = 'addPickupDate';
                         include __DIR__ . '/order_form_dates.php';
                         ?>
-                        <div class="col-md-4 mb-3">
+                        <div class="col order-form-col-size">
                             <label class="form-label">Ширина (cm)</label>
                             <input type="text" inputmode="decimal" autocomplete="off" class="form-control order-price-trigger" name="width" step="0.1">
                         </div>
-                        <div class="col-md-4 mb-3">
+                        <div class="col order-form-col-size">
                             <label class="form-label">Височина (cm)</label>
                             <input type="text" inputmode="decimal" autocomplete="off" class="form-control order-price-trigger" name="height" step="0.1">
+                        </div>
+                        <div class="col order-form-col-artwork">
+                            <label class="form-label">Вид произведение</label>
+                            <select class="form-select" name="artwork_type">
+                                <?php foreach (artwork_type_options() as $value => $label): ?>
+                                <option value="<?= e($value) ?>"><?= e($label) ?></option>
+                                <?php endforeach; ?>
+                            </select>
                         </div>
                     </div>
                     <?php $additionalProfilesId = 'additionalProfiles'; include __DIR__ . '/order_form_materials.php'; ?>
@@ -81,7 +89,7 @@
 </div>
 
 <div class="modal" data-bs-scroll="true" id="editOrderModal" tabindex="-1">
-    <div class="modal-dialog modal-lg">
+    <div class="modal-dialog modal-lg order-form-modal">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title">Редактиране на поръчка</h5>
@@ -89,20 +97,28 @@
             </div>
             <div class="modal-body">
                 <form id="editOrderForm" class="order-form" method="post">
-                    <div class="row">
+                    <div class="row g-2 mb-2 order-form-row-1">
                         <?php
                         $showAcceptedDate = true;
                         $acceptedDateId = 'editAcceptedDate';
                         $pickupDateId = 'editDate';
                         include __DIR__ . '/order_form_dates.php';
                         ?>
-                        <div class="col-md-4 mb-3">
+                        <div class="col order-form-col-size">
                             <label class="form-label">Ширина (cm)</label>
                             <input type="text" inputmode="decimal" autocomplete="off" class="form-control order-price-trigger" name="width" step="0.1">
                         </div>
-                        <div class="col-md-4 mb-3">
+                        <div class="col order-form-col-size">
                             <label class="form-label">Височина (cm)</label>
                             <input type="text" inputmode="decimal" autocomplete="off" class="form-control order-price-trigger" name="height" step="0.1">
+                        </div>
+                        <div class="col order-form-col-artwork">
+                            <label class="form-label">Вид произведение</label>
+                            <select class="form-select" name="artwork_type" id="editArtworkType">
+                                <?php foreach (artwork_type_options() as $value => $label): ?>
+                                <option value="<?= e($value) ?>"><?= e($label) ?></option>
+                                <?php endforeach; ?>
+                            </select>
                         </div>
                     </div>
                     <?php $additionalProfilesId = 'additionalProfilesEdit'; include __DIR__ . '/order_form_materials.php'; ?>
@@ -158,7 +174,7 @@
 </div>
 
 <div class="modal" data-bs-scroll="true" id="addSubOrderModal" tabindex="-1">
-    <div class="modal-dialog modal-lg">
+    <div class="modal-dialog modal-lg order-form-modal">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title">Добавяне на подпоръчка</h5>

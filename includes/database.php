@@ -261,6 +261,16 @@ function ensure_catalog_schema(PDO $conn): void
         'profile_ready_frame' => $isMysql ? 'TINYINT(1) NOT NULL DEFAULT 0' : 'INTEGER NOT NULL DEFAULT 0',
         'profile_ready_frame_price' => $isMysql ? 'DECIMAL(10,2) NULL' : 'REAL',
         'deleted_at' => $isMysql ? 'DATETIME NULL' : 'TEXT',
+        'artwork_type' => $isMysql ? 'VARCHAR(40) NULL' : 'TEXT',
+        'passepartout_zero' => $isMysql ? 'TINYINT(1) NOT NULL DEFAULT 0' : 'INTEGER NOT NULL DEFAULT 0',
+        'passepartout_margin_l' => $isMysql ? 'DECIMAL(10,2) NULL' : 'REAL',
+        'passepartout_margin_r' => $isMysql ? 'DECIMAL(10,2) NULL' : 'REAL',
+        'passepartout_margin_t' => $isMysql ? 'DECIMAL(10,2) NULL' : 'REAL',
+        'passepartout_margin_b' => $isMysql ? 'DECIMAL(10,2) NULL' : 'REAL',
+        'hanger' => $isMysql ? 'VARCHAR(255) NULL' : 'TEXT',
+        'carry_floors' => $isMysql ? 'INT UNSIGNED NULL' : 'INTEGER',
+        'additional_passepartouts' => $isMysql ? 'VARCHAR(500) NULL' : 'TEXT',
+        'passepartout_reveal_cm' => $isMysql ? 'VARCHAR(120) NULL' : 'TEXT',
     ];
     foreach ($orderExtraColumns as $column => $type) {
         if (!table_has_column($conn, 'orders', $column)) {
@@ -274,6 +284,8 @@ function ensure_catalog_schema(PDO $conn): void
     ensure_passepartout_tier_pricing_schema($conn);
     ensure_painting_reservations_schema($conn);
     migrate_service_display_names($conn);
+    migrate_services_price_list_2026($conn);
+    migrate_hanging_options_2026($conn);
 }
 
 function ensure_painting_reservations_schema(PDO $conn): void

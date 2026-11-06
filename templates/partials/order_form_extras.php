@@ -23,6 +23,17 @@ foreach ($groupedServices as $category => $categoryServices) {
 }
 $extrasId = $extrasId ?? 'extras';
 $collapseId = 'orderExtras_' . $extrasId;
+$hints = $order_pricing_hints ?? [];
+$fmtHint = static function (string $key, float $default) use ($hints): string {
+    return number_format((float)($hints[$key] ?? $default), 2, '.', '');
+};
+$ppExtraOpening = $fmtHint('passepartout_multi_opening', 1.22);
+$ppCuttingLabor = $fmtHint('passepartout_cutting_labor', 1.84);
+$frameBoxLabor = $fmtHint('frame_labor_box', 3.05);
+$side150 = $fmtHint('frame_surcharge_side_150', 2.54);
+$side200 = $fmtHint('frame_surcharge_side_200', 6.09);
+$urgentPct = number_format((float)($hints['urgent_surcharge_percent'] ?? 50), 0, '.', '');
+$studentPct = number_format((float)($hints['student_discount_percent'] ?? 10), 0, '.', '');
 ?>
 <div class="card mb-3 border-secondary-subtle order-extras-card">
     <button class="card-header py-2 w-100 text-start border-0 bg-transparent d-flex align-items-center justify-content-between"
@@ -45,26 +56,30 @@ $collapseId = 'orderExtras_' . $extrasId;
                 <div class="col-md-3 mb-3">
                     <label class="form-label">Отвори паспарту</label>
                     <input type="text" inputmode="decimal" autocomplete="off" class="form-control order-price-trigger" name="passepartout_openings" value="1" min="1">
-                    <div class="form-text">Първият включен, +1.22 €/отвор</div>
+                    <div class="form-text">Първият отвор е включен; всеки допълнителен +<?= e($ppExtraOpening) ?> €/бр. (при паспарту в поръчката)</div>
                 </div>
                 <div class="col-md-3 mb-3">
                     <label class="form-label">Км транспорт</label>
                     <input type="text" inputmode="decimal" autocomplete="off" class="form-control order-price-trigger transport-km-input" name="transport_km" step="0.1" min="0" placeholder="При транспорт">
                 </div>
+                <div class="col-md-3 mb-3">
+                    <label class="form-label">Етажи (качване)</label>
+                    <input type="text" inputmode="numeric" autocomplete="off" class="form-control order-price-trigger" name="carry_floors" min="0" placeholder="При качване">
+                </div>
                 <div class="col-md-6 mb-3">
                     <label class="form-label d-block">Паспарту и отстъпки</label>
                     <div class="form-check form-check-inline">
                         <input type="checkbox" class="form-check-input order-price-trigger" name="client_passepartout_cutting" id="<?= e($extrasId) ?>_client_pp">
-                        <label class="form-check-label" for="<?= e($extrasId) ?>_client_pp">Рязане на паспарту на клиент (+1.84 €/бр.)</label>
+                        <label class="form-check-label" for="<?= e($extrasId) ?>_client_pp">Рязане на паспарту на клиент (+<?= e($ppCuttingLabor) ?> €/бр.)</label>
                     </div>
                     <div class="form-text mb-2">Само при собствено паспарту. При паспарту от фирмата рязането не се начислява.</div>
                     <div class="form-check form-check-inline">
                         <input type="checkbox" class="form-check-input order-price-trigger" name="student_discount" id="<?= e($extrasId) ?>_student">
-                        <label class="form-check-label" for="<?= e($extrasId) ?>_student">Ученик (−10%)</label>
+                        <label class="form-check-label" for="<?= e($extrasId) ?>_student">Ученик (−<?= e($studentPct) ?>%)</label>
                     </div>
                     <div class="form-check form-check-inline">
                         <input type="checkbox" class="form-check-input order-price-trigger" name="urgent" id="<?= e($extrasId) ?>_urgent">
-                        <label class="form-check-label" for="<?= e($extrasId) ?>_urgent">Спешна (+50%)</label>
+                        <label class="form-check-label" for="<?= e($extrasId) ?>_urgent">Спешна (+<?= e($urgentPct) ?>%)</label>
                     </div>
                     <div class="form-check form-check-inline">
                         <input type="checkbox" class="form-check-input order-price-trigger" name="complex_passepartout" id="<?= e($extrasId) ?>_complex">
@@ -75,12 +90,15 @@ $collapseId = 'orderExtras_' . $extrasId;
 
             <div class="row mb-3">
                 <div class="col-12">
+                    <p class="small text-muted mb-2">
+                        Труд дърво: доплащане +<?= e($side150) ?> €/бр. при най-дълга страна ≥150 см или +<?= e($side200) ?> €/бр. при ≥200 см (веднъж за рамка, не за всяка страна поотделно).
+                    </p>
                     <label class="form-label">Специална изработка на рамка</label>
                     <div class="row">
                         <div class="col-md-4">
                             <div class="form-check">
                                 <input type="checkbox" class="form-check-input order-price-trigger" name="frame_box" id="<?= e($extrasId) ?>_frame_box">
-                                <label class="form-check-label" for="<?= e($extrasId) ?>_frame_box">Тип кутия (+3.05 €/бр.)</label>
+                                <label class="form-check-label" for="<?= e($extrasId) ?>_frame_box">Тип кутия (+<?= e($frameBoxLabor) ?> €/бр.)</label>
                             </div>
                             <div class="form-check">
                                 <input type="checkbox" class="form-check-input order-price-trigger" name="frame_nonstandard" id="<?= e($extrasId) ?>_frame_nonstandard">
@@ -133,7 +151,15 @@ $collapseId = 'orderExtras_' . $extrasId;
                                        <?= $tierRank > 0 ? 'data-tier-group="' . e($category) . '" data-area-tier="' . (int)$tierRank . '"' : '' ?>>
                                 <label class="form-check-label" for="svc_<?= e($extrasId) ?>_<?= (int)$service['id'] ?>">
                                     <?= e($service['name']) ?>
-                                    <span class="text-muted">(<?= number_format((float)$service['price'], 2) ?> €)</span>
+                                    <?php
+                                    $unitLabel = service_pricing_unit_label($service['pricing_unit'] ?? 'piece');
+                                    $minPrice = (float)($service['min_price'] ?? 0);
+                                    $priceHint = number_format((float)$service['price'], 2) . ' ' . $unitLabel;
+                                    if ($minPrice > 0) {
+                                        $priceHint .= ', мин. ' . number_format($minPrice, 2) . ' €/бр.';
+                                    }
+                                    ?>
+                                    <span class="text-muted">(<?= e($priceHint) ?>)</span>
                                 </label>
                             </div>
                             <?php endforeach; ?>

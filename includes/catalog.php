@@ -32,6 +32,10 @@ function get_catalog_item_by_name(PDO $conn, string $table, string $name): ?arra
     $stmt->execute([$name]);
     $item = $stmt->fetch();
     if ($item) {
+        if ($table === 'passepartouts') {
+            return refresh_passepartout_row_pricing($item, $conn);
+        }
+
         return $item;
     }
 
@@ -211,6 +215,20 @@ function get_pricing_setting(PDO $conn, string $key, float $default = 0): float
     return $value !== false ? (float)$value : $default;
 }
 
+/** Tariffs shown in order extras UI (same keys as Услуги → автоматични). */
+function get_order_automatic_pricing_hints(PDO $conn): array
+{
+    return [
+        'passepartout_multi_opening' => get_pricing_setting($conn, 'passepartout_multi_opening', 1.22),
+        'passepartout_cutting_labor' => get_pricing_setting($conn, 'passepartout_cutting_labor', 1.84),
+        'frame_labor_box' => get_pricing_setting($conn, 'frame_labor_box', 3.05),
+        'frame_surcharge_side_150' => get_pricing_setting($conn, 'frame_surcharge_side_150', 2.54),
+        'frame_surcharge_side_200' => get_pricing_setting($conn, 'frame_surcharge_side_200', 6.09),
+        'urgent_surcharge_percent' => get_pricing_setting($conn, 'urgent_surcharge_percent', 50),
+        'student_discount_percent' => get_pricing_setting($conn, 'student_discount_percent', 10),
+    ];
+}
+
 function get_all_pricing_settings(PDO $conn): array
 {
     $rows = $conn->query('SELECT setting_key, setting_value, label, category FROM pricing_settings ORDER BY category, setting_key')->fetchAll();
@@ -238,6 +256,65 @@ function update_pricing_setting_value(PDO $conn, string $key, float $value): voi
 {
     $stmt = $conn->prepare('UPDATE pricing_settings SET setting_value = ? WHERE setting_key = ?');
     $stmt->execute([$value, $key]);
+    if ($stmt->rowCount() > 0) {
+        return;
+    }
+
+    seed_passepartout_kind_tier_settings($conn);
+    $stmt->execute([$value, $key]);
+}
+
+function sync_passepartout_items_to_price_kind_settings(PDO $conn): int
+{
+    $definitions = get_passepartout_price_kind_definitions($conn);
+    $stmt = $conn->prepare('
+        UPDATE passepartouts
+        SET tier_scheme = ?, price_tier_1 = ?, price_tier_2 = ?, price_tier_3 = ?, price_tier_4 = ?, price = ?
+        WHERE price_kind = ?
+    ');
+    $updated = 0;
+
+    foreach ($definitions as $kindKey => $definition) {
+        if ($kindKey === 'manual') {
+            continue;
+        }
+
+        $stmt->execute([
+            $definition['scheme'],
+            (float)$definition['tiers'][0],
+            (float)$definition['tiers'][1],
+            (float)$definition['tiers'][2],
+            (float)$definition['tiers'][3],
+            (float)$definition['tiers'][0],
+            $kindKey,
+        ]);
+        $updated += $stmt->rowCount();
+    }
+
+    return $updated;
+}
+
+/** Tier columns for display/JSON — live values from Услуги when price_kind is not manual. */
+function refresh_passepartout_row_pricing(array $row, ?PDO $conn = null): array
+{
+    $kind = trim($row['price_kind'] ?? 'manual');
+    if ($kind === '' || $kind === 'manual') {
+        return $row;
+    }
+
+    $definitions = get_passepartout_price_kind_definitions($conn);
+    if (!isset($definitions[$kind])) {
+        return $row;
+    }
+
+    $definition = $definitions[$kind];
+    for ($i = 1; $i <= 4; $i++) {
+        $row["price_tier_{$i}"] = (float)($definition['tiers'][$i - 1] ?? 0);
+    }
+    $row['tier_scheme'] = $definition['scheme'];
+    $row['price'] = (float)($definition['tiers'][0] ?? 0);
+
+    return $row;
 }
 
 function passepartout_kind_tier_setting_key(string $kindKey, int $tierIndex): string
@@ -267,12 +344,12 @@ function build_default_price_list_rule_content(PDO $conn, string $ruleKey): stri
 {
     switch ($ruleKey) {
         case 'fir':
-            return 'Фира (материал) — 2×(ш+в)/100 + ширина×8/100 л.м. на рамка (фирата е извън скобите); само при фирмен материал';
+            return 'Фира (материал) — 2×(ш+в)/100 + ширина×8/100 л.м. на рамка (фирата е извън скобите); дърво/пластмаса; без фира при метал';
         case 'wide_profile':
             return 'Широк профил (≥10 см) — страна над 2.5 м се фактурира като 3 м';
         case 'frame_labor':
             return sprintf(
-                'Труд (дърво) — %s + %s × ширина на профила (см), мин. %s €/бр.; страна над 150 см +%s €; над 200 см +%s €',
+                'Труд (дърво) — %s + %s × ширина на профила (см), мин. %s €/бр.; страна от 150 см +%s €; от 200 см +%s €',
                 format_price_list_rule_amount(get_pricing_setting($conn, 'frame_labor_base', 2.78)),
                 format_price_list_rule_amount(get_pricing_setting($conn, 'frame_labor_per_profile_cm', 0.50)),
                 format_price_list_rule_amount(get_pricing_setting($conn, 'frame_labor_min', 3.54)),
@@ -431,6 +508,8 @@ function save_services_pricing_from_post(PDO $conn, array $post): array
 
     $counts['rules'] = save_price_list_rules_from_post($conn, $post);
 
+    $counts['pp_synced'] = sync_passepartout_items_to_price_kind_settings($conn);
+
     return $counts;
 }
 
@@ -444,7 +523,132 @@ function seed_price_list_catalog(PDO $conn): void
     seed_hanging_from_price_list($conn);
     seed_hanging_weight_tiers($conn);
     seed_services_from_price_list($conn);
+    migrate_services_price_list_2026($conn);
+    migrate_hanging_options_2026($conn);
     sync_catalog_min_prices($conn);
+    sync_passepartout_items_to_price_kind_settings($conn);
+}
+
+function upsert_service_catalog_row(PDO $conn, string $name, float $price, float $minPrice, string $unit, string $category): void
+{
+    $check = $conn->prepare('SELECT id FROM services WHERE name = ?');
+    $check->execute([$name]);
+    $id = $check->fetchColumn();
+    if ($id) {
+        $conn->prepare('UPDATE services SET price = ?, min_price = ?, pricing_unit = ?, category = ? WHERE id = ?')
+            ->execute([$price, $minPrice, $unit, $category, (int)$id]);
+    } else {
+        $conn->prepare('INSERT INTO services (name, price, min_price, pricing_unit, category) VALUES (?, ?, ?, ?, ?)')
+            ->execute([$name, $price, $minPrice, $unit, $category]);
+    }
+}
+
+function migrate_services_price_list_2026(PDO $conn): void
+{
+    $items = [
+        ['Каширане пенокартон', 26.0, 6.0, 'sqm', 'mounting'],
+        ['Каширане сив или бирен картон (макс. 70×100)', 20.0, 5.0, 'sqm', 'mounting'],
+        ['Подлепване на пъзел', 13.0, 3.0, 'sqm', 'mounting'],
+        ['Странично изпъване на платно', 10.0, 3.0, 'sqm', 'stretching'],
+        ['Задно изпъване на платно', 16.0, 5.0, 'sqm', 'stretching'],
+        ['Изпъване/подлепване на гоблен', 16.0, 4.0, 'sqm', 'stretching'],
+        ['Рамкиране на текстил / фланелка', 20.0, 0.0, 'piece', 'assembly'],
+        ['Изправяне на преса', 8.0, 0.0, 'piece', 'general'],
+        ['Стойка до 20/30 см', 4.0, 0.0, 'piece', 'hardware'],
+        ['Стойка от 20/30 до 30/40 см', 7.0, 0.0, 'piece', 'hardware'],
+        ['Клипс', 0.5, 0.0, 'piece', 'hardware'],
+        ['Ъгъл или зак. метален профил', 0.6, 0.0, 'piece', 'hardware'],
+        ['Транспорт', 2.0, 20.0, 'km', 'general'],
+        ['Качване материали на етаж', 10.0, 0.0, 'piece', 'general'],
+        ['Монтаж на място', 10.0, 40.0, 'piece', 'general'],
+        ['Поставяне дистанционер на рамка', 3.0, 0.0, 'piece', 'frame_labor_svc'],
+        ['Монтаж подрамка (рамка тип каса)', 3.0, 0.0, 'piece', 'frame_labor_svc'],
+        ['Изработка фазер с клипсове', 5.0, 0.0, 'piece', 'frame_labor_svc'],
+        ['Дървена лайсна дистанционер', 4.27, 0.0, 'piece', 'frame_labor_svc'],
+    ];
+
+    foreach ($items as [$name, $price, $minPrice, $unit, $category]) {
+        upsert_service_catalog_row($conn, $name, $price, $minPrice, $unit, $category);
+    }
+
+    $legacyRenames = [
+        'Каширане сив картон' => 'Каширане сив или бирен картон (макс. 70×100)',
+        'Опъване платно (странично)' => 'Странично изпъване на платно',
+        'Опъване платно (задно опъване)' => 'Задно изпъване на платно',
+        'Рамкиране текстил (фланелка и др.)' => 'Рамкиране на текстил / фланелка',
+        'Подлепване пъзел' => 'Подлепване на пъзел',
+        'Изпъване гоблен с подлепяне' => 'Изпъване/подлепване на гоблен',
+        'Стойка (до 20/30 см)' => 'Стойка до 20/30 см',
+        'Стойка (до 30/40 см)' => 'Стойка от 20/30 до 30/40 см',
+        'Качване материали (етаж)' => 'Качване материали на етаж',
+        'Ъгъл/закачалка метален профил' => 'Ъгъл или зак. метален профил',
+        'Изработка клипсове' => 'Изработка фазер с клипсове',
+    ];
+
+    $checkNew = $conn->prepare('SELECT COUNT(*) FROM services WHERE name = ?');
+    $checkOld = $conn->prepare('SELECT COUNT(*) FROM services WHERE name = ?');
+    $deleteOld = $conn->prepare('DELETE FROM services WHERE name = ?');
+
+    foreach ($legacyRenames as $oldName => $newName) {
+        $checkOld->execute([$oldName]);
+        $checkNew->execute([$newName]);
+        $hasOld = (int)$checkOld->fetchColumn() > 0;
+        $hasNew = (int)$checkNew->fetchColumn() > 0;
+
+        if ($hasOld && !$hasNew) {
+            $conn->prepare('UPDATE services SET name = ? WHERE name = ?')->execute([$newName, $oldName]);
+            continue;
+        }
+        if ($hasOld && $hasNew) {
+            $deleteOld->execute([$oldName]);
+        }
+    }
+}
+
+function upsert_hanging_option(PDO $conn, string $name, float $price, float $minPrice, string $unit): void
+{
+    $isMysql = $conn->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql';
+    $sql = $isMysql
+        ? 'INSERT INTO hanging_options (name, price, min_price, pricing_unit, stock) VALUES (?, ?, ?, ?, 0)
+           ON DUPLICATE KEY UPDATE price = VALUES(price), min_price = VALUES(min_price), pricing_unit = VALUES(pricing_unit)'
+        : 'INSERT INTO hanging_options (name, price, min_price, pricing_unit, stock) VALUES (?, ?, ?, ?, 0)
+           ON CONFLICT(name) DO UPDATE SET price = excluded.price, min_price = excluded.min_price, pricing_unit = excluded.pricing_unit';
+    $conn->prepare($sql)->execute([$name, $price, $minPrice, $unit]);
+}
+
+function migrate_hanging_options_2026(PDO $conn): void
+{
+    $packages = [
+        ['Връзка до 1 m, до 7 kg + 2 закачалки', 1.50, 0, 'piece'],
+        ['Връзка до 9 kg', 2.00, 0, 'piece'],
+        ['Връзка до 11 kg', 2.50, 0, 'piece'],
+        ['Връзка до 1 m, до 19 kg (без закачалки)', 3.00, 0, 'piece'],
+        ['Връзка до 27 kg', 4.00, 0, 'piece'],
+    ];
+    foreach ($packages as [$name, $price, $min, $unit]) {
+        upsert_hanging_option($conn, $name, $price, $min, $unit);
+    }
+
+    $hangers = [
+        ['Закачалка малка', 0.30, 0, 'piece'],
+        ['Закачалка тип крокодил', 0.60, 0, 'piece'],
+        ['Закачалка голяма (1 дупка)', 1.00, 0, 'piece'],
+        ['Закачалка с 2 дупки', 2.00, 0, 'piece'],
+        ['Закачалка с 3 дупки', 3.00, 0, 'piece'],
+    ];
+    foreach ($hangers as [$name, $price, $min, $unit]) {
+        upsert_hanging_option($conn, $name, $price, $min, $unit);
+    }
+}
+
+function service_pricing_unit_label(string $unit): string
+{
+    return match ($unit) {
+        'sqm' => '€/кв.м.',
+        'lm' => '€/л.м.',
+        'km' => '€/км',
+        default => '€/бр.',
+    };
 }
 
 function service_area_tier_rank(string $name): int
@@ -552,7 +756,6 @@ function seed_services_from_price_list(PDO $conn): void
         ['Изправяне на преса', 7.33, 0, 'piece', 'general'],
         ['Монтаж на място', 9.18, 36.73, 'piece', 'general'],
         ['Транспорт', 1.83, 30.67, 'km', 'general'],
-        ['Качване материали (етаж)', 10.22, 0, 'piece', 'general'],
         ['Клипс', 0.22, 0, 'piece', 'hardware'],
         ['Изработка клипсове', 3.54, 0, 'piece', 'frame_labor_svc'],
         ['Дървена лайсна дистанционер', 4.27, 0, 'piece', 'frame_labor_svc'],
@@ -562,8 +765,6 @@ function seed_services_from_price_list(PDO $conn): void
         ['Изпъване гоблен с подлепяне', 15.26, 3.05, 'sqm', 'stretching'],
         ['Уплътнител метална рамка', 0.18, 0, 'piece', 'hardware'],
         ['Ъгъл/закачалка метален профил', 0.61, 0, 'piece', 'hardware'],
-        ['Стойка (до 20/30 см)', 3.66, 0, 'piece', 'hardware'],
-        ['Стойка (до 30/40 см)', 6.11, 0, 'piece', 'hardware'],
     ];
 
     foreach ($items as [$name, $price, $minPrice, $unit, $category]) {
@@ -612,8 +813,8 @@ function seed_pricing_settings(PDO $conn): void
         ['frame_labor_base', 2.78, 'Базова цена изработка рамка (€/бр.)', 'frame_labor'],
         ['frame_labor_per_profile_cm', 0.50, 'Допълнение за всеки см ширина на профила (€/бр.)', 'frame_labor'],
         ['frame_labor_min', 3.54, 'Минимална цена изработка рамка (€/бр.)', 'frame_labor'],
-        ['frame_surcharge_side_150', 2.54, 'Доплащане страна над 150 см (€/бр.)', 'frame_labor'],
-        ['frame_surcharge_side_200', 6.09, 'Доплащане страна над 200 см (€/бр.)', 'frame_labor'],
+        ['frame_surcharge_side_150', 2.54, 'Доплащане при най-дълга страна ≥150 см (€/бр., веднъж)', 'frame_labor'],
+        ['frame_surcharge_side_200', 6.09, 'Доплащане при най-дълга страна ≥200 см (€/бр., веднъж)', 'frame_labor'],
         ['frame_labor_metal', 5.07, 'Изработка метална рамка (€/бр.)', 'frame_labor'],
         ['frame_labor_client_material', 15.27, 'Изработка с профил на клиент (€/бр.)', 'frame_labor'],
         ['frame_labor_box', 3.05, 'Рамка тип кутия (€/бр.)', 'frame_labor'],

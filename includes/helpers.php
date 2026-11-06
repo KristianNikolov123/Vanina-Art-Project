@@ -166,6 +166,140 @@ function normalize_passepartout_use(?string $use): string
     return in_array($use, ['passepartout', 'background', 'both'], true) ? $use : '';
 }
 
+function passepartout_use_form_options(): array
+{
+    return [
+        'passepartout' => 'Паспарту (слой 1, 2… надолу)',
+        'background' => 'Само фон',
+        'both' => 'Паспарту + фон',
+    ];
+}
+
+function artwork_type_options(): array
+{
+    return [
+        '' => '—',
+        'graphics' => 'Графика',
+        'oil_acrylic' => 'Масло, акрил',
+        'pastel' => 'Пастел',
+        'collage' => 'Колаж',
+        'tapestry' => 'Гоблен',
+        'poster' => 'Постер',
+        'papyrus' => 'Папирус',
+        'other' => 'Други',
+    ];
+}
+
+function artwork_type_label(?string $type): string
+{
+    $options = artwork_type_options();
+
+    return $options[$type ?? ''] ?? ($type !== '' && $type !== null ? $type : '');
+}
+
+function format_passepartout_zero_label(array $order): string
+{
+    if (empty($order['passepartout_zero'])) {
+        return '';
+    }
+
+    $parts = [];
+    foreach (['l' => 'Л', 'r' => 'Д', 't' => 'Г', 'b' => 'Д'] as $key => $label) {
+        $col = 'passepartout_margin_' . $key;
+        if (isset($order[$col]) && $order[$col] !== '' && $order[$col] !== null) {
+            $parts[] = $label . ' ' . $order[$col];
+        }
+    }
+
+    return 'Нулево паспарту' . ($parts !== [] ? ' (' . implode(', ', $parts) . ' см)' : '');
+}
+
+function passepartout_layers_from_post(array $post): array
+{
+    $use = normalize_passepartout_use($post['passepartout_use'] ?? '');
+    $items = $post['additional_passepartouts'] ?? [];
+    if (!is_array($items)) {
+        $items = [];
+    }
+    $items = array_values(array_filter(array_map(static fn ($p) => trim((string)$p), $items)));
+
+    if ($use === 'both') {
+        return [
+            'background' => trim($post['passepartout_background'] ?? ''),
+            'additional' => count($items) > 0 ? implode(', ', $items) : '',
+        ];
+    }
+
+    if ($use === 'background') {
+        return [
+            'background' => '',
+            'additional' => '',
+        ];
+    }
+
+    return [
+        'background' => '',
+        'additional' => count($items) > 0 ? implode(', ', $items) : '',
+    ];
+}
+
+function encode_passepartout_reveals_from_post(array $post): ?string
+{
+    $reveals = $post['passepartout_reveal'] ?? null;
+    if (!is_array($reveals)) {
+        $legacy = trim($post['passepartout_reveal_cm'] ?? '');
+
+        return $legacy !== '' ? $legacy : null;
+    }
+
+    $parts = array_map(static fn ($v) => trim((string)$v), $reveals);
+    while ($parts !== [] && end($parts) === '') {
+        array_pop($parts);
+    }
+
+    return count($parts) > 0 ? implode(',', $parts) : null;
+}
+
+function decode_passepartout_reveals(?string $stored): array
+{
+    $stored = trim($stored ?? '');
+    if ($stored === '') {
+        return [];
+    }
+
+    if (!str_contains($stored, ',')) {
+        return [$stored];
+    }
+
+    return array_map('trim', explode(',', $stored));
+}
+
+function infer_passepartout_use_from_post(array $post): string
+{
+    $explicit = normalize_passepartout_use($post['passepartout_use'] ?? '');
+    if ($explicit !== '') {
+        return $explicit;
+    }
+
+    $layers = passepartout_layers_from_post($post);
+    $bg = trim($post['passepartout_background'] ?? '') ?: $layers['background'];
+
+    if (!empty($post['passepartout_zero'])) {
+        return $bg !== '' ? 'both' : 'passepartout';
+    }
+
+    $primary = trim($post['passepartout'] ?? '');
+
+    if ($primary !== '' && $bg !== '') {
+        return 'both';
+    }
+    if ($primary === '' && $bg !== '') {
+        return 'both';
+    }
+
+    return 'passepartout';
+}
+
 function passepartout_material_layer_count(string $use): int
 {
     return match ($use) {
@@ -642,6 +776,16 @@ function order_view_data(array $order): array
         'frame_shape' => $order['frame_shape'] ?? '',
         'frame_high_complexity' => (bool)($order['frame_high_complexity'] ?? false),
         'client_passepartout_cutting' => (bool)($order['client_passepartout_cutting'] ?? false),
+        'artwork_type' => $order['artwork_type'] ?? '',
+        'passepartout_zero' => (bool)($order['passepartout_zero'] ?? false),
+        'passepartout_margin_l' => $order['passepartout_margin_l'] ?? null,
+        'passepartout_margin_r' => $order['passepartout_margin_r'] ?? null,
+        'passepartout_margin_t' => $order['passepartout_margin_t'] ?? null,
+        'passepartout_margin_b' => $order['passepartout_margin_b'] ?? null,
+        'hanger' => $order['hanger'] ?? '',
+        'carry_floors' => $order['carry_floors'] ?? null,
+        'additional_passepartouts' => $order['additional_passepartouts'] ?? null,
+        'passepartout_reveal_cm' => $order['passepartout_reveal_cm'] ?? null,
     ];
 }
 
@@ -662,6 +806,53 @@ function fetch_active_orders(PDO $conn): array
           AND (paid = 0 OR collected = 0)
         ORDER BY order_number DESC, sub_order_number
     ')->fetchAll();
+}
+
+function order_row_content_revision(array $order): string
+{
+    $payload = json_encode(order_view_data($order), JSON_UNESCAPED_UNICODE);
+
+    return hash('sha256', (int)$order['id'] . '|' . $payload);
+}
+
+function compute_active_orders_revision(array $orders): string
+{
+    $chunks = [];
+    foreach ($orders as $order) {
+        $chunks[] = order_row_content_revision($order);
+    }
+    sort($chunks);
+
+    return hash('sha256', implode("\n", $chunks));
+}
+
+function render_active_order_row_html(array $order, array $servicesById): string
+{
+    ob_start();
+    include ROOT_PATH . '/templates/partials/active_order_row.php';
+
+    return trim(ob_get_clean());
+}
+
+function build_active_orders_sync_payload(PDO $conn): array
+{
+    $orders = fetch_active_orders($conn);
+    $revision = compute_active_orders_revision($orders);
+    $services = get_all_services($conn);
+    $servicesById = array_column($services, 'name', 'id');
+    $rows = [];
+    foreach ($orders as $order) {
+        $rows[] = [
+            'id' => (int)$order['id'],
+            'revision' => order_row_content_revision($order),
+            'html' => render_active_order_row_html($order, $servicesById),
+        ];
+    }
+
+    return [
+        'revision' => $revision,
+        'orders' => $rows,
+    ];
 }
 
 function fetch_completed_orders(PDO $conn): array
@@ -1113,9 +1304,8 @@ function bulk_update_passepartouts(PDO $conn, array $ids, array $post): int
             continue;
         }
 
-        if (!empty($post['apply_price']) && ($post['price'] ?? '') !== '') {
-            $priceStmt = $conn->prepare('UPDATE passepartouts SET price = ? WHERE id = ?');
-            $priceStmt->execute([(float)$post['price'], $id]);
+        if (!empty($post['apply_passepartout_pricing'])) {
+            save_passepartout_pricing_fields($conn, $id, resolve_passepartout_pricing_from_input($post));
         }
 
         if (is_array($applySheetStock) && !empty($applySheetStock)) {
@@ -1159,49 +1349,99 @@ function get_additional_profiles(): ?string
     return null;
 }
 
+function get_additional_passepartouts(): ?string
+{
+    $layers = passepartout_layers_from_post($_POST);
+
+    return $layers['additional'] !== '' ? $layers['additional'] : null;
+}
+
+function parse_optional_margin_cm(?string $value): ?float
+{
+    $value = trim($value ?? '');
+    if ($value === '') {
+        return null;
+    }
+
+    return max(0, (float)str_replace(',', '.', $value));
+}
+
 function build_order_from_post(?string $customerName = null, ?string $customerPhone = null): array
 {
-    $passepartoutId = (int)($_POST['passepartout_id'] ?? 0);
-    $passepartoutBackgroundId = (int)($_POST['passepartout_background_id'] ?? 0);
-    $passepartoutName = trim($_POST['passepartout'] ?? '');
+    $post = $_POST;
+    $conn = get_db_connection();
+    $ppUse = infer_passepartout_use_from_post($post);
+    $passepartoutZero = $ppUse !== 'background' && !empty($post['passepartout_zero']);
+    $passepartoutName = $passepartoutZero ? '' : trim($post['passepartout'] ?? '');
+    $ppLayers = passepartout_layers_from_post($post);
+    $passepartoutBackgroundName = $ppUse === 'both' ? $ppLayers['background'] : '';
 
-    $extraServices = $_POST['extra_services'] ?? [];
+    $passepartoutId = null;
+    if (!$passepartoutZero && $passepartoutName !== '') {
+        $resolved = get_catalog_item_by_name($conn, 'passepartouts', $passepartoutName);
+        $passepartoutId = $resolved ? (int)$resolved['id'] : null;
+    }
+
+    $passepartoutBackgroundId = null;
+    if ($passepartoutBackgroundName !== '') {
+        $resolvedBg = get_catalog_item_by_name($conn, 'passepartouts', $passepartoutBackgroundName);
+        $passepartoutBackgroundId = $resolvedBg ? (int)$resolvedBg['id'] : null;
+    }
+
+    $extraServices = $post['extra_services'] ?? [];
     if (!is_array($extraServices)) {
         $extraServices = [];
     }
 
+    $artworkType = trim($post['artwork_type'] ?? '');
+    if (!array_key_exists($artworkType, artwork_type_options())) {
+        $artworkType = $artworkType === '' ? '' : 'other';
+    }
+
     return [
-        'width' => $_POST['width'] ?? null,
-        'height' => $_POST['height'] ?? null,
-        'profile' => $_POST['profile'] ?? '',
-        'glass' => $_POST['glass'] ?? '',
+        'width' => $post['width'] ?? null,
+        'height' => $post['height'] ?? null,
+        'profile' => $post['profile'] ?? '',
+        'glass' => $post['glass'] ?? '',
         'passepartout' => $passepartoutName,
-        'passepartout_id' => $passepartoutId > 0 ? $passepartoutId : null,
-        'passepartout_background_id' => $passepartoutBackgroundId > 0 ? $passepartoutBackgroundId : null,
-        'back' => trim($_POST['back'] ?? ''),
-        'hanging' => trim($_POST['hanging'] ?? ''),
-        'weight_kg' => ($_POST['weight_kg'] ?? '') !== '' ? max(0, (float)$_POST['weight_kg']) : null,
-        'passepartout_openings' => max(1, (int)($_POST['passepartout_openings'] ?? 1)),
-        'urgent' => isset($_POST['urgent']) ? 1 : 0,
-        'student_discount' => isset($_POST['student_discount']) ? 1 : 0,
-        'complex_passepartout' => isset($_POST['complex_passepartout']) ? 1 : 0,
+        'passepartout_id' => $passepartoutId,
+        'passepartout_background' => $passepartoutBackgroundName,
+        'passepartout_background_id' => $passepartoutBackgroundId,
+        'back' => trim($post['back'] ?? ''),
+        'hanging' => trim($post['hanging'] ?? ''),
+        'hanger' => trim($post['hanger'] ?? ''),
+        'weight_kg' => ($post['weight_kg'] ?? '') !== '' ? max(0, (float)$post['weight_kg']) : null,
+        'passepartout_openings' => max(1, (int)($post['passepartout_openings'] ?? 1)),
+        'urgent' => isset($post['urgent']) ? 1 : 0,
+        'student_discount' => isset($post['student_discount']) ? 1 : 0,
+        'complex_passepartout' => isset($post['complex_passepartout']) ? 1 : 0,
         'extra_services' => json_encode(array_values(array_map('intval', $extraServices))),
-        'transport_km' => ($_POST['transport_km'] ?? '') !== '' ? (float)$_POST['transport_km'] : null,
-        'frame_box' => isset($_POST['frame_box']) ? 1 : 0,
-        'frame_nonstandard' => isset($_POST['frame_nonstandard']) ? 1 : 0,
-        'frame_shape' => in_array($_POST['frame_shape'] ?? '', ['ellipse_12', 'circle_24'], true) ? $_POST['frame_shape'] : '',
-        'frame_high_complexity' => isset($_POST['frame_high_complexity']) ? 1 : 0,
-        'client_passepartout_cutting' => isset($_POST['client_passepartout_cutting']) ? 1 : 0,
-        'profile_ready_frame' => isset($_POST['profile_ready_frame']) ? 1 : 0,
-        'profile_ready_frame_price' => ($_POST['profile_ready_frame_price'] ?? '') !== ''
-            ? max(0, (float)$_POST['profile_ready_frame_price'])
+        'transport_km' => ($post['transport_km'] ?? '') !== '' ? (float)$post['transport_km'] : null,
+        'carry_floors' => ($post['carry_floors'] ?? '') !== '' ? max(0, (int)$post['carry_floors']) : null,
+        'frame_box' => isset($post['frame_box']) ? 1 : 0,
+        'frame_nonstandard' => isset($post['frame_nonstandard']) ? 1 : 0,
+        'frame_shape' => in_array($post['frame_shape'] ?? '', ['ellipse_12', 'circle_24'], true) ? $post['frame_shape'] : '',
+        'frame_high_complexity' => isset($post['frame_high_complexity']) ? 1 : 0,
+        'client_passepartout_cutting' => isset($post['client_passepartout_cutting']) ? 1 : 0,
+        'profile_ready_frame' => isset($post['profile_ready_frame']) ? 1 : 0,
+        'profile_ready_frame_price' => ($post['profile_ready_frame_price'] ?? '') !== ''
+            ? max(0, (float)$post['profile_ready_frame_price'])
             : null,
-        'manual_discount' => ($_POST['discount'] ?? '') !== '' ? max(0, min(100, (float)$_POST['discount'])) : 0,
-        'passepartout_use' => normalize_passepartout_use($_POST['passepartout_use'] ?? ''),
+        'manual_discount' => ($post['discount'] ?? '') !== '' ? max(0, min(100, (float)$post['discount'])) : 0,
+        'passepartout_use' => $ppUse,
+        'passepartout_zero' => $passepartoutZero ? 1 : 0,
+        'passepartout_margin_l' => parse_optional_margin_cm($post['passepartout_margin_l'] ?? null),
+        'passepartout_margin_r' => parse_optional_margin_cm($post['passepartout_margin_r'] ?? null),
+        'passepartout_margin_t' => parse_optional_margin_cm($post['passepartout_margin_t'] ?? null),
+        'passepartout_margin_b' => parse_optional_margin_cm($post['passepartout_margin_b'] ?? null),
+        'artwork_type' => $artworkType,
         'additional_profiles' => get_additional_profiles(),
-        'frame_count' => max(1, (int)($_POST['frame_count'] ?? 1)),
-        'customer_name' => $customerName ?? ($_POST['customer_name'] ?? ''),
-        'customer_phone' => $customerPhone ?? trim($_POST['customer_phone'] ?? ''),
+        'additional_passepartouts' => get_additional_passepartouts(),
+        'passepartout_reveal_cm' => encode_passepartout_reveals_from_post($post),
+        'frame_count' => max(1, (int)($post['frame_count'] ?? 1)),
+        'customer_name' => $customerName ?? ($post['customer_name'] ?? ''),
+        'customer_phone' => $customerPhone ?? trim($post['customer_phone'] ?? ''),
+        'description' => $post['description'] ?? '',
     ];
 }
 
@@ -1259,6 +1499,16 @@ function order_bind_values(array $order): array
         $order['client_passepartout_cutting'],
         $order['profile_ready_frame'] ?? 0,
         $order['profile_ready_frame_price'] ?? null,
+        $order['artwork_type'] ?? '',
+        $order['passepartout_zero'] ?? 0,
+        $order['passepartout_margin_l'] ?? null,
+        $order['passepartout_margin_r'] ?? null,
+        $order['passepartout_margin_t'] ?? null,
+        $order['passepartout_margin_b'] ?? null,
+        $order['hanger'] ?? '',
+        $order['carry_floors'] ?? null,
+        $order['additional_passepartouts'] ?? null,
+        $order['passepartout_reveal_cm'] ?? null,
     ];
 }
 
@@ -1274,9 +1524,13 @@ function insert_order_row(PDO $conn, array $order, int $orderNumber, int $subOrd
             additional_profiles, frame_count, advance_payment, discount, description,
             passepartout_openings, urgent, student_discount, complex_passepartout, extra_services, transport_km,
             frame_box, frame_nonstandard, frame_shape, frame_high_complexity, client_passepartout_cutting,
-            profile_ready_frame, profile_ready_frame_price
+            profile_ready_frame, profile_ready_frame_price,
+            artwork_type, passepartout_zero, passepartout_margin_l, passepartout_margin_r,
+            passepartout_margin_t, passepartout_margin_b, hanger, carry_floors,
+            additional_passepartouts, passepartout_reveal_cm
         ) VALUES (
-            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
         )
     ');
     $stmt->execute(array_merge([$orderNumber, $subOrderNumber], order_bind_values($order)));
@@ -1297,7 +1551,10 @@ function update_order_row(PDO $conn, array $order, int $orderId): void
             complex_passepartout = ?, extra_services = ?, transport_km = ?,
             frame_box = ?, frame_nonstandard = ?, frame_shape = ?, frame_high_complexity = ?,
             client_passepartout_cutting = ?,
-            profile_ready_frame = ?, profile_ready_frame_price = ?
+            profile_ready_frame = ?, profile_ready_frame_price = ?,
+            artwork_type = ?, passepartout_zero = ?, passepartout_margin_l = ?, passepartout_margin_r = ?,
+            passepartout_margin_t = ?, passepartout_margin_b = ?, hanger = ?, carry_floors = ?,
+            additional_passepartouts = ?, passepartout_reveal_cm = ?
         WHERE id = ?
     ');
     $stmt->execute(array_merge(order_bind_values($order), [$orderId]));
@@ -1323,17 +1580,20 @@ function prepare_order_persistence(PDO $conn, array $post, ?string $customerName
             ? max(0, (float)$post['profile_ready_frame_price'])
             : null,
         'glass' => $post['glass'] ?? '',
-        'passepartout' => $stockOrder['passepartout'] ?? ($post['passepartout'] ?? ''),
+        'passepartout' => !empty($orderData['passepartout_zero'])
+            ? format_passepartout_zero_label($orderData)
+            : ($stockOrder['passepartout'] ?? ($orderData['passepartout'] ?? '')),
         'passepartout_bill_width' => $stockOrder['passepartout_bill_width'] ?? null,
         'passepartout_bill_height' => $stockOrder['passepartout_bill_height'] ?? null,
         'passepartout_sheet_type_id' => $stockOrder['passepartout_sheet_type_id'] ?? null,
         'passepartout_sheet_usage' => $stockOrder['passepartout_sheet_usage'] ?? null,
-        'passepartout_use' => normalize_passepartout_use($post['passepartout_use'] ?? '') ?: ($orderData['passepartout_use'] ?? ''),
-        'passepartout_background' => $stockOrder['passepartout_background'] ?? '',
+        'passepartout_use' => $orderData['passepartout_use'] ?? '',
+        'passepartout_background' => $stockOrder['passepartout_background'] ?? ($orderData['passepartout_background'] ?? ''),
         'passepartout_bg_sheet_type_id' => $stockOrder['passepartout_bg_sheet_type_id'] ?? null,
         'passepartout_bg_sheet_usage' => $stockOrder['passepartout_bg_sheet_usage'] ?? null,
         'back' => $post['back'] ?? '',
         'hanging' => $post['hanging'] ?? '',
+        'hanger' => trim($post['hanger'] ?? ''),
         'weight_kg' => ($post['weight_kg'] ?? '') !== '' ? max(0, (float)$post['weight_kg']) : null,
         'customer_name' => $customerName ?? ($post['customer_name'] ?? ''),
         'customer_phone' => $customerPhone ?? trim($post['customer_phone'] ?? ''),
@@ -1356,5 +1616,14 @@ function prepare_order_persistence(PDO $conn, array $post, ?string $customerName
         'frame_shape' => in_array($post['frame_shape'] ?? '', ['ellipse_12', 'circle_24'], true) ? $post['frame_shape'] : '',
         'frame_high_complexity' => isset($post['frame_high_complexity']) ? 1 : 0,
         'client_passepartout_cutting' => isset($post['client_passepartout_cutting']) ? 1 : 0,
+        'artwork_type' => $orderData['artwork_type'] ?? '',
+        'passepartout_zero' => $orderData['passepartout_zero'] ?? 0,
+        'passepartout_margin_l' => $orderData['passepartout_margin_l'] ?? null,
+        'passepartout_margin_r' => $orderData['passepartout_margin_r'] ?? null,
+        'passepartout_margin_t' => $orderData['passepartout_margin_t'] ?? null,
+        'passepartout_margin_b' => $orderData['passepartout_margin_b'] ?? null,
+        'carry_floors' => $orderData['carry_floors'] ?? null,
+        'additional_passepartouts' => get_additional_passepartouts(),
+        'passepartout_reveal_cm' => encode_passepartout_reveals_from_post($post),
     ];
 }

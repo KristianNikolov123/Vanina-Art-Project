@@ -501,3 +501,76 @@ html:has(body.page-orders) {
     font-weight: 600;
     color: #0d6efd;
 }
+
+.order-form-modal.modal-dialog {
+    max-width: 52rem;
+}
+
+.order-form-modal .modal-body {
+    padding-top: 0.75rem;
+}
+
+.order-form-modal .form-label {
+    font-size: 0.8125rem;
+    margin-bottom: 0.25rem;
+}
+
+@media (min-width: 768px) {
+    .order-form-row-1 {
+        display: grid;
+        grid-template-columns: minmax(6.5rem, 1fr) minmax(8rem, 1.35fr) minmax(4rem, 0.75fr) minmax(4rem, 0.75fr) minmax(7rem, 1.15fr);
+        gap: 0.5rem 0.65rem;
+        align-items: end;
+    }
+
+    .order-form-row-1 > [class*="col"] {
+        width: 100%;
+        max-width: none;
+        padding-left: 0;
+        padding-right: 0;
+        margin-bottom: 0.5rem !important;
+    }
+}
+
+.order-form-modal .order-form-pickup-group .order-date-picker-native {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+.order-form-modal .order-form-pickup-group .order-date-picker-btn {
+    flex: 0 0 auto;
+    padding-left: 0.55rem;
+    padding-right: 0.55rem;
+}
+
+.order-form-modal .order-form-pickup-group .order-date-dd {
+    min-width: 0;
+}
+
+.order-form-modal .passepartout-layer-fields .form-control {
+    font-size: 0.9375rem;
+}
+
+.order-form-modal .passepartout-layers {
+    background: #fafbfc;
+}
+
+.order-form-modal .passepartout-layer-primary.passepartout-layer--zero {
+    background: #fff8e6;
+    border-left: 3px solid #ffc107;
+}
+
+.order-form-modal .passepartout-layer-additional {
+    background: #fff;
+}
+
+.order-form-modal .passepartout-zero-panel {
+    border-color: rgba(0, 0, 0, 0.06) !important;
+}

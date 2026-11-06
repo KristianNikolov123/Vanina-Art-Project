@@ -79,22 +79,29 @@ function bindPassepartoutPricingRoot(root) {
 function setPassepartoutPricingValues(root, data) {
     const kindSelect = root.querySelector('[data-pp-price-kind]');
     const schemeSelect = root.querySelector('[data-pp-tier-scheme]');
+    const kind = data.priceKind || 'manual';
+    const definitions = window.PASSEPARTOUT_PRICE_KINDS || {};
+    let tiers = data.tiers || [];
+
+    if (kind !== 'manual' && definitions[kind]) {
+        tiers = definitions[kind].tiers || tiers;
+    }
 
     if (kindSelect) {
-        kindSelect.value = data.priceKind || 'manual';
+        kindSelect.value = kind;
     }
     if (schemeSelect) {
         schemeSelect.value = data.tierScheme || '80x100';
     }
 
-    (data.tiers || []).forEach((price, index) => {
+    tiers.forEach((price, index) => {
         const input = root.querySelector(`[data-pp-tier-input="${index + 1}"]`);
         if (input) {
             input.value = price;
         }
     });
 
-    applyPassepartoutPriceKind(root, data.priceKind || 'manual', { preserveTiers: true });
+    applyPassepartoutPriceKind(root, kind, { preserveTiers: kind === 'manual' });
 }
 
 function editPassepartout(passepartoutId) {
@@ -126,10 +133,41 @@ function editPassepartout(passepartoutId) {
     modal.show();
 }
 
+function bindBulkPassepartoutPricingToggle() {
+    const form = document.getElementById('bulkEditPassepartoutsForm');
+    if (!form || form.dataset.bulkPricingToggleBound === '1') {
+        return;
+    }
+    form.dataset.bulkPricingToggleBound = '1';
+
+    const checkbox = form.querySelector('#bulk_pp_apply_pricing');
+    const block = form.querySelector('[data-bulk-pricing-block]');
+    if (!checkbox || !block) {
+        return;
+    }
+
+    const toggle = () => {
+        const enabled = checkbox.checked;
+        block.querySelectorAll('input, select, textarea').forEach((el) => {
+            el.disabled = !enabled;
+        });
+    };
+
+    checkbox.addEventListener('change', toggle);
+    toggle();
+}
+
 function openBulkEditPassepartouts(ids) {
     const form = document.getElementById('bulkEditPassepartoutsForm');
     fillBulkHiddenIds(form, ids);
     resetBulkForm('#bulkEditPassepartoutsForm');
+
+    const pricingRoot = form.querySelector('[data-bulk-pricing-block] [data-pp-pricing-root]');
+    if (pricingRoot) {
+        bindPassepartoutPricingRoot(pricingRoot);
+        applyPassepartoutPriceKind(pricingRoot, 'manual');
+    }
+    bindBulkPassepartoutPricingToggle();
 
     const modal = new bootstrap.Modal(document.getElementById('bulkEditPassepartoutsModal'));
     modal.show();
@@ -152,6 +190,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     bindBulkFieldToggles('#bulkEditPassepartoutsForm');
+    bindBulkPassepartoutPricingToggle();
 
     initBulkSelection({
         selectAllSelector: '#selectAllPassepartouts',

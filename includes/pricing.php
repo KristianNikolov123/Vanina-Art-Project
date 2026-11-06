@@ -9,6 +9,11 @@ function profile_linear_meters(float $widthCm, float $heightCm, int $frameCount 
     return 2 * ($widthCm + $heightCm) / 100 * $frameCount;
 }
 
+function profile_type_includes_material_fir(string $profileType): bool
+{
+    return !in_array($profileType, ['metal', 'client_material'], true);
+}
+
 function profile_material_fir_cm(float $profileWidthCm): float
 {
     if ($profileWidthCm <= 0) {
@@ -120,11 +125,13 @@ function calculate_stacked_profile_material(
         $profileWidth = isset($profile['width_cm']) ? (float)$profile['width_cm'] : 0.0;
         $billW = $width + 2 * $offset;
         $billH = $height + 2 * $offset;
-        $isFirmMaterial = ($profile['profile_type'] ?? 'wood') !== 'client_material';
+        $profileType = $profile['profile_type'] ?? 'wood';
+        $isFirmMaterial = $profileType !== 'client_material';
+        $applyFir = $isFirmMaterial && profile_type_includes_material_fir($profileType);
         $firCm = 0.0;
         $firMeters = 0.0;
         $baseMeters = 0.0;
-        if ($isFirmMaterial && $profileWidth > 0) {
+        if ($applyFir && $profileWidth > 0) {
             $billing = profile_firm_material_linear_meters($billW, $billH, $profileWidth, $frameCount);
             $baseMeters = $billing['base_meters'];
             $firMeters = $billing['fir_meters'];
@@ -182,6 +189,9 @@ function calculate_stacked_profile_labor(
     $offset = 0.0;
     $hasDimensions = $width > 0 && $height > 0;
 
+    $outerBillW = 0.0;
+    $outerBillH = 0.0;
+
     foreach ($profileNames as $name) {
         $profile = get_catalog_item_by_name($conn, 'profiles', $name);
         if (!$profile) {
@@ -194,7 +204,9 @@ function calculate_stacked_profile_labor(
         $billH = $height + 2 * $offset;
 
         if ($hasDimensions) {
-            $labor = calculate_frame_labor($conn, $billW, $billH, $profile, $frameCount);
+            $outerBillW = max($outerBillW, $billW);
+            $outerBillH = max($outerBillH, $billH);
+            $labor = calculate_frame_labor($conn, $billW, $billH, $profile, $frameCount, false);
         } else {
             $labor = calculate_frame_labor_minimum($conn, $profile, $frameCount);
         }
@@ -209,6 +221,10 @@ function calculate_stacked_profile_labor(
         ];
 
         $offset += $profileWidth;
+    }
+
+    if ($hasDimensions && $outerBillW > 0 && $outerBillH > 0) {
+        $totalLabor += frame_labor_side_surcharge($conn, $outerBillW, $outerBillH) * $frameCount;
     }
 
     return [
@@ -405,12 +421,33 @@ function calculate_area_price(float $sqm, float $pricePerSqm, float $minPrice, i
     return round($chargedPerPiece * $pieces, 2);
 }
 
+/**
+ * Side-length surcharge once per frame: longest side >= 200 cm or >= 150 cm (not per dimension).
+ */
+function frame_labor_side_surcharge(PDO $conn, float $widthCm, float $heightCm): float
+{
+    if ($widthCm <= 0 || $heightCm <= 0) {
+        return 0.0;
+    }
+
+    $longestSide = max($widthCm, $heightCm);
+    if ($longestSide >= 200) {
+        return get_pricing_setting($conn, 'frame_surcharge_side_200', 6.09);
+    }
+    if ($longestSide >= 150) {
+        return get_pricing_setting($conn, 'frame_surcharge_side_150', 2.54);
+    }
+
+    return 0.0;
+}
+
 function calculate_frame_labor(
     PDO $conn,
     float $widthCm,
     float $heightCm,
     ?array $mainProfile,
-    int $frameCount
+    int $frameCount,
+    bool $applySideSurcharge = true
 ): float {
     if ($widthCm <= 0 || $heightCm <= 0 || $frameCount < 1) {
         return 0;
@@ -428,17 +465,12 @@ function calculate_frame_labor(
     $base = get_pricing_setting($conn, 'frame_labor_base', 2.78);
     $perCm = get_pricing_setting($conn, 'frame_labor_per_profile_cm', 0.50);
     $min = get_pricing_setting($conn, 'frame_labor_min', 3.54);
-    $surcharge150 = get_pricing_setting($conn, 'frame_surcharge_side_150', 2.54);
-    $surcharge200 = get_pricing_setting($conn, 'frame_surcharge_side_200', 6.09);
 
     $perFrame = $base + ($perCm * max(0, $profileWidthCm));
     $perFrame = max($perFrame, $min);
 
-    $maxSide = max($widthCm, $heightCm);
-    if ($maxSide > 200) {
-        $perFrame += $surcharge200;
-    } elseif ($maxSide > 150) {
-        $perFrame += $surcharge150;
+    if ($applySideSurcharge) {
+        $perFrame += frame_labor_side_surcharge($conn, $widthCm, $heightCm);
     }
 
     return round($perFrame * $frameCount, 2);
@@ -481,6 +513,9 @@ function calculate_extra_services_cost(PDO $conn, array $order, float $widthCm, 
             } else {
                 $cost = round($minPrice > 0 ? $minPrice : $price, 2);
             }
+        } elseif (str_contains($service['name'], 'Качване материали') && (int)($order['carry_floors'] ?? 0) > 0) {
+            $floors = (int)$order['carry_floors'];
+            $cost = round($price * $floors, 2);
         } else {
             $perPiece = $price;
             if ($minPrice > 0 && $perPiece < $minPrice) {
@@ -902,6 +937,14 @@ function resolve_passepartout_tier_index(
 function get_passepartout_tier_price(array $passepartout, int $tierIndex): float
 {
     $tierIndex = max(1, min(4, $tierIndex));
+    $kind = trim($passepartout['price_kind'] ?? 'manual');
+    if ($kind !== '' && $kind !== 'manual') {
+        $definitions = get_passepartout_price_kind_definitions();
+        if (isset($definitions[$kind])) {
+            return (float)($definitions[$kind]['tiers'][$tierIndex - 1] ?? 0);
+        }
+    }
+
     $column = "price_tier_{$tierIndex}";
 
     return (float)($passepartout[$column] ?? 0);
@@ -943,6 +986,21 @@ function resolve_passepartout_material_cost(
     ];
 }
 
+function order_has_passepartout_work(array $order, ?array $passepartoutBilling): bool
+{
+    if (trim((string)($order['passepartout'] ?? '')) !== '') {
+        return true;
+    }
+    if (trim((string)($order['additional_passepartouts'] ?? '')) !== '') {
+        return true;
+    }
+    if ($passepartoutBilling !== null && trim((string)($passepartoutBilling['passepartout_name'] ?? '')) !== '') {
+        return true;
+    }
+
+    return false;
+}
+
 function calculate_passepartout_labor_cost(
     PDO $conn,
     array $order,
@@ -953,16 +1011,19 @@ function calculate_passepartout_labor_cost(
         return 0.0;
     }
 
-    if (empty($order['client_passepartout_cutting'])) {
-        return 0.0;
+    $openings = max(1, (int)($order['passepartout_openings'] ?? 1));
+    $extraOpening = get_pricing_setting($conn, 'passepartout_multi_opening', 1.22);
+    $hasPassepartout = order_has_passepartout_work($order, $passepartoutBilling);
+    $clientCutting = !empty($order['client_passepartout_cutting']);
+
+    $labor = 0.0;
+
+    if ($clientCutting) {
+        $cutting = get_pricing_setting($conn, 'passepartout_cutting_labor', 1.84);
+        $labor += $cutting * $frameCount;
     }
 
-    $openings = max(1, (int)($order['passepartout_openings'] ?? 1));
-    $cutting = get_pricing_setting($conn, 'passepartout_cutting_labor', 1.84);
-    $extraOpening = get_pricing_setting($conn, 'passepartout_multi_opening', 1.22);
-
-    $labor = $cutting * $frameCount;
-    if ($openings > 1) {
+    if ($openings > 1 && ($hasPassepartout || $clientCutting)) {
         $labor += max(0, $openings - 1) * $extraOpening * $frameCount;
     }
 
@@ -1075,10 +1136,13 @@ function calculate_passepartout_billing(PDO $conn, array $order): ?array
         $use = 'passepartout';
     }
 
-    $primaryId = (int)($order['passepartout_id'] ?? 0);
-    if ($primaryId <= 0) {
-        $resolved = resolve_passepartout($conn, null, $order['passepartout'] ?? null);
-        $primaryId = $resolved ? (int)$resolved['id'] : 0;
+    $primaryId = 0;
+    if (empty($order['passepartout_zero'])) {
+        $primaryId = (int)($order['passepartout_id'] ?? 0);
+        if ($primaryId <= 0) {
+            $resolved = resolve_passepartout($conn, null, $order['passepartout'] ?? null);
+            $primaryId = $resolved ? (int)$resolved['id'] : 0;
+        }
     }
 
     if ($use === 'both') {
@@ -1326,8 +1390,30 @@ function calculate_order_pricing(PDO $conn, array $order): array
         $hangingCost = $hangingDetail['cost'];
     }
 
+    $hangerName = trim($order['hanger'] ?? '');
+    if ($hangerName !== '') {
+        $hangingCost += calculate_hanging_cost($conn, $hangerName, $width, $height, $frameCount, 0);
+    }
+
     $passepartout = calculate_passepartout_billing($conn, $order);
     $passepartoutMaterialCost = $passepartout['cost'] ?? 0.0;
+    $extraPpList = trim($order['additional_passepartouts'] ?? '');
+    if ($extraPpList !== '') {
+        foreach (preg_split('/\s*,\s*/', $extraPpList) as $extraPpName) {
+            $extraPpName = trim($extraPpName);
+            if ($extraPpName === '') {
+                continue;
+            }
+            $resolvedExtra = resolve_passepartout($conn, null, $extraPpName);
+            if (!$resolvedExtra) {
+                continue;
+            }
+            $extraLayer = calculate_passepartout_layer_billing($conn, $order, (int)$resolvedExtra['id']);
+            if ($extraLayer) {
+                $passepartoutMaterialCost += (float)($extraLayer['cost'] ?? 0);
+            }
+        }
+    }
     $openings = max(1, (int)($order['passepartout_openings'] ?? 1));
     $passepartoutLaborCost = calculate_passepartout_labor_cost($conn, $order, $passepartout, $frameCount);
     $passepartoutCost = round($passepartoutMaterialCost + $passepartoutLaborCost, 2);
